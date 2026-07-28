@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["frontend", "*/migrations"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["backend"]
+testpaths = ["backend"]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = []
+ignore_missing_imports = true
+exclude = ["frontend", "migrations"]
