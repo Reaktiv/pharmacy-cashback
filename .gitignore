@@ -15,6 +15,8 @@ venv/
 db.sqlite3
 staticfiles/
 media/
+celerybeat-schedule
+celerybeat.pid
 
 # Env / secrets
 .env

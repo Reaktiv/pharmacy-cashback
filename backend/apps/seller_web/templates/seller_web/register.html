@@ -1,0 +1,46 @@
+{% extends "seller_web/base.html" %}
+{% block body %}
+<div class="top-bar">
+  <h1>{{ seller.branch.tenant.name }} — {{ seller.branch.name }}</h1>
+  <form method="post" action="{% url 'accounts:logout' %}">
+    {% csrf_token %}
+    <button type="submit" style="width:auto; background:#57606a; padding:0.35rem 0.75rem;">Log out</button>
+  </form>
+</div>
+
+{% if messages %}
+<ul class="messages">
+  {% for message in messages %}
+  <li class="{{ message.tags }}">{{ message }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<form method="post" action="{% url 'seller_web:earn' %}">
+  {% csrf_token %}
+  <fieldset>
+    <legend>Earn</legend>
+    {{ earn_form.idempotency_key }}
+    <label for="{{ earn_form.check_amount.id_for_label }}">{{ earn_form.check_amount.label }}</label>
+    {{ earn_form.check_amount }}
+    <label for="{{ earn_form.phone.id_for_label }}">{{ earn_form.phone.label }}</label>
+    {{ earn_form.phone }}
+    <label>{{ earn_form.no_cashback }} {{ earn_form.no_cashback.label }}</label>
+    <button type="submit">Record sale</button>
+  </fieldset>
+</form>
+
+<form method="post" action="{% url 'seller_web:redeem' %}">
+  {% csrf_token %}
+  <fieldset class="redeem">
+    <legend>Redeem points</legend>
+    {{ redeem_form.idempotency_key }}
+    <label for="{{ redeem_form.check_amount.id_for_label }}">{{ redeem_form.check_amount.label }}</label>
+    {{ redeem_form.check_amount }}
+    <label for="{{ redeem_form.otp_code.id_for_label }}">{{ redeem_form.otp_code.label }}</label>
+    {{ redeem_form.otp_code }}
+    <label>{{ redeem_form.no_cashback }} {{ redeem_form.no_cashback.label }}</label>
+    <button type="submit">Redeem</button>
+  </fieldset>
+</form>
+{% endblock %}

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Seller Register{% endblock %}</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.25rem; }
+  fieldset { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+  legend { font-weight: bold; padding: 0 0.5rem; }
+  label { display: block; margin-top: 0.75rem; font-size: 0.9rem; }
+  input[type=text], input[type=number] {
+    width: 100%; font-size: 1.5rem; padding: 0.5rem; margin-top: 0.25rem;
+    box-sizing: border-box;
+  }
+  input[type=checkbox] { width: auto; margin-right: 0.5rem; }
+  button {
+    margin-top: 1rem; width: 100%; font-size: 1.1rem; padding: 0.75rem;
+    background: #1a7f37; color: white; border: none; border-radius: 6px; cursor: pointer;
+  }
+  fieldset.redeem button { background: #0969da; }
+  .messages { list-style: none; padding: 0; }
+  .messages li { padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; }
+  .messages .success { background: #dafbe1; color: #116329; }
+  .messages .error { background: #ffebe9; color: #82071e; }
+  .top-bar { display: flex; justify-content: space-between; align-items: baseline; }
+</style>
+</head>
+<body>
+{% block body %}{% endblock %}
+</body>
+</html>

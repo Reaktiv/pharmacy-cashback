@@ -4,9 +4,11 @@ Django settings for the Pharmacy Cashback SaaS platform.
 See CLAUDE.md §9 for the tech stack and conventions this file implements.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR.parent
@@ -23,6 +25,12 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 # FERNET_KEY encrypts Bot.token_encrypted (CLAUDE.md §5). Never log or commit it.
 FERNET_KEY = env("FERNET_KEY")
 
+REDIS_URL = env("REDIS_URL")
+
+# Public HTTPS base URL Telegram will POST webhooks to (CLAUDE.md §7a). Telegram
+# requires HTTPS, so local dev needs a tunnel (e.g. ngrok) pointed at this host.
+PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="https://example.com")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -31,7 +39,20 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "apps.tenants",
+    "apps.accounts",
+    "apps.customers",
+    "apps.ledger",
+    "apps.seller_web",
+    "apps.bot",
+    "apps.broadcasts",
+    "apps.audit",
 ]
+
+# Session-based browser login used by the seller-web register page
+# (CLAUDE.md §7b) — distinct from the JWT API used by the admin panel.
+LOGIN_URL = "accounts:login"
+LOGIN_REDIRECT_URL = "seller_web:register"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -39,6 +60,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.tenants.middleware.TenantMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -88,16 +110,34 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
 }
 
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": True,
+}
+
 # Celery (CLAUDE.md §9: notifications, broadcasts throttled to Telegram's ~25 msg/sec)
-CELERY_BROKER_URL = env("REDIS_URL")
-CELERY_RESULT_BACKEND = env("REDIS_URL")
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# CLAUDE.md §8: daily per-seller summary. 21:00 Tashkent time = roughly end
+# of a pharmacy's business day; adjust per real operating hours later.
+CELERY_BEAT_SCHEDULE = {
+    "send-daily-seller-summaries": {
+        "task": "apps.ledger.tasks.send_daily_seller_summaries",
+        "schedule": crontab(hour=21, minute=0),
+    },
+}

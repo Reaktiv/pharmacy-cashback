@@ -1,0 +1,10 @@
+from django.apps import AppConfig
+
+
+class BotConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.bot"
+    label = "bot"
+
+    def ready(self):
+        from apps.bot import signals  # noqa: F401

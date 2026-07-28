@@ -1,0 +1,9 @@
+{% extends "seller_web/base.html" %}
+{% block body %}
+<h1>Not available</h1>
+<p>This page is only for seller accounts.</p>
+<form method="post" action="{% url 'accounts:logout' %}">
+  {% csrf_token %}
+  <button type="submit">Log out</button>
+</form>
+{% endblock %}

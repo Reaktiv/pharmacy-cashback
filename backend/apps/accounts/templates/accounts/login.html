@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 360px; margin: 4rem auto; padding: 0 1rem; }
+  input { width: 100%; font-size: 1.1rem; padding: 0.5rem; margin-top: 0.25rem; box-sizing: border-box; }
+  label { display: block; margin-top: 1rem; }
+  button {
+    margin-top: 1.5rem; width: 100%; font-size: 1.1rem; padding: 0.75rem;
+    background: #1a7f37; color: white; border: none; border-radius: 6px; cursor: pointer;
+  }
+  .errorlist { color: #82071e; }
+</style>
+</head>
+<body>
+<h1>Seller login</h1>
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <label for="{{ form.username.id_for_label }}">Username</label>
+  {{ form.username }}
+  <label for="{{ form.password.id_for_label }}">Password</label>
+  {{ form.password }}
+  <button type="submit">Log in</button>
+</form>
+</body>
+</html>
