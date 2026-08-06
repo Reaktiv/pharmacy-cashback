@@ -228,7 +228,7 @@ export default function BroadcastsPage() {
             <span>{formError}</span>
           </div>
         )}
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(0, 1fr)', gap: '1.5rem' }}>
+        <div className="broadcast-composer">
           <div>
             <div className="field wide">
               <label htmlFor="broadcast-title">{t('th_title')}</label>

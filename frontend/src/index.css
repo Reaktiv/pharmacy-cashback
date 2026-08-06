@@ -1188,6 +1188,18 @@ tr.expanded-row:hover td {
   color: var(--danger-600);
 }
 
+.broadcast-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .broadcast-composer {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Media dropzone ---------- */
 
 .media-dropzone {
