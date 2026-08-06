@@ -2,7 +2,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import UserProfile
+from apps.accounts.models import Seller, UserProfile
 from apps.accounts.permissions import IsBranchManager, IsSuperadmin, IsTenantAdmin
 from apps.audit.services import log_action
 from apps.ledger.models import Transaction
@@ -11,6 +11,7 @@ from apps.ledger.reports import (
     get_cross_tenant_dashboard,
     get_daily_earn_spend_report,
     get_seller_report,
+    get_seller_transactions,
 )
 from apps.ledger.serializers import ReversalRequestSerializer, TransactionSerializer
 from apps.ledger.services import post_reversal
@@ -133,6 +134,50 @@ class SellerReportView(APIView):
                 "flagged_count": row["flagged_count"],
             }
             for row in rows
+        ]
+        return Response(data)
+
+
+class SellerTransactionsView(APIView):
+    """Drill-down from the seller report row: full transaction history for
+    one seller, newest first, scoped the same way as SellerReportView. A
+    branch manager may only pull sellers from their own branch."""
+
+    permission_classes = [IsTenantAdmin | IsBranchManager | IsSuperadmin]
+
+    def get(self, request):
+        seller_id = request.query_params.get("seller_id")
+        if not seller_id:
+            raise ValidationError({"seller_id": "Required."})
+
+        tenant = _resolve_report_tenant(request)
+        try:
+            seller = Seller.objects.all_tenants().get(pk=seller_id, tenant=tenant)
+        except (Seller.DoesNotExist, ValueError):
+            return Response({"detail": "Seller not found."}, status=404)
+
+        profile = request.user.profile
+        if (
+            profile.role == UserProfile.Role.BRANCH_MANAGER
+            and seller.branch_id != profile.branch_id
+        ):
+            return Response({"detail": "Seller not found."}, status=404)
+
+        data = [
+            {
+                "id": txn.id,
+                "created_at": txn.created_at,
+                "customer_phone": txn.customer.phone,
+                "check_amount": txn.check_amount,
+                "cash_paid": txn.cash_paid,
+                "cashback_earned": txn.cashback_earned,
+                "cashback_spent": txn.cashback_spent,
+                "no_cashback": txn.no_cashback,
+                "type": txn.type,
+                "status": txn.status,
+                "flagged": txn.flagged,
+            }
+            for txn in get_seller_transactions(tenant=tenant, seller_id=seller.id)
         ]
         return Response(data)
 

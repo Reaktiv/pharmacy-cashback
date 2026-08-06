@@ -87,3 +87,126 @@ def test_seller_cannot_access_broadcasts(api_client_for, make_user, make_tenant,
     response = client.get("/api/broadcasts/")
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_broadcast_body_is_sanitized_to_the_telegram_safe_subset(
+    api_client_for, make_user, make_tenant
+):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.post(
+        "/api/broadcasts/",
+        {
+            "title": "Sale!",
+            "body": (
+                "<script>alert(1)</script>"
+                "<div>Hello <strong>world</strong></div>"
+                '<a href="javascript:x">bad</a>'
+            ),
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+    broadcast = Broadcast.objects.all_tenants().get(pk=response.data["id"])
+    assert "<script>" not in broadcast.body
+    assert "alert(1)" not in broadcast.body
+    assert "<b>world</b>" in broadcast.body
+    assert "javascript:" not in broadcast.body
+
+
+@pytest.mark.django_db
+def test_broadcast_body_over_text_only_limit_is_rejected(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.post(
+        "/api/broadcasts/", {"title": "Sale!", "body": "a" * 4090}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert "body" in response.data
+
+
+@pytest.mark.django_db
+def test_broadcast_body_within_text_only_limit_is_accepted(
+    api_client_for, make_user, make_tenant
+):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.post(
+        "/api/broadcasts/", {"title": "Sale!", "body": "a" * 100}, format="json"
+    )
+
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_broadcast_body_over_media_caption_limit_is_rejected(
+    api_client_for, make_user, make_tenant
+):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    upload = client.post(
+        "/api/broadcast-media/",
+        {"file": SimpleUploadedFile("pic.png", b"x" * 10, content_type="image/png")},
+        format="multipart",
+    )
+    media_id = upload.data["id"]
+
+    response = client.post(
+        "/api/broadcasts/",
+        {"title": "Sale!", "body": "a" * 1050, "media_id": media_id},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "body" in response.data
+
+
+@pytest.mark.django_db
+def test_broadcast_body_within_media_caption_limit_is_accepted(
+    api_client_for, make_user, make_tenant
+):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    upload = client.post(
+        "/api/broadcast-media/",
+        {"file": SimpleUploadedFile("pic.png", b"x" * 10, content_type="image/png")},
+        format="multipart",
+    )
+    media_id = upload.data["id"]
+
+    response = client.post(
+        "/api/broadcasts/",
+        {"title": "Sale!", "body": "a" * 100, "media_id": media_id},
+        format="json",
+    )
+
+    assert response.status_code == 201, response.data
+
+
+@pytest.mark.django_db
+def test_only_draft_broadcasts_can_be_edited(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    broadcast = Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="Sale!", body="body", created_by=admin, status=Broadcast.Status.SENT
+    )
+
+    response = client.patch(f"/api/broadcasts/{broadcast.pk}/", {"title": "New"}, format="json")
+
+    assert response.status_code == 400

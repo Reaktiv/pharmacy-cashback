@@ -35,7 +35,7 @@ def test_redemption_never_exceeds_customer_balance(make_tenant):
         tenant=tenant,
     )
 
-    assert allowed == Decimal("3000.00")  # balance-limited, then rounded down
+    assert allowed == Decimal("3456.00")  # balance-limited, rounded down to whole som
 
 
 @pytest.mark.django_db

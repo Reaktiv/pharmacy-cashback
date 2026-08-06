@@ -14,9 +14,17 @@ phone_validator = RegexValidator(
 
 
 class Customer(TenantScopedModel):
+    class Language(models.TextChoices):
+        UZBEK = "uz", "O'zbekcha"
+        ENGLISH = "en", "English"
+        RUSSIAN = "ru", "Русский"
+
     telegram_id = models.BigIntegerField(null=True, blank=True)
     phone = models.CharField(max_length=20, validators=[phone_validator])
     full_name = models.CharField(max_length=255, blank=True)
+    language = models.CharField(
+        max_length=2, choices=Language.choices, default=Language.UZBEK
+    )
     consent_given_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1,0 +1,10 @@
+<div class="language-switcher" role="group" aria-label="Til">
+  {% for code in languages %}
+  <form method="post" action="{% url 'seller_web:set_language' %}" style="display:contents">
+    {% csrf_token %}
+    <input type="hidden" name="language" value="{{ code }}">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <button type="submit"{% if code == language %} class="active"{% endif %}>{{ code|upper }}</button>
+  </form>
+  {% endfor %}
+</div>

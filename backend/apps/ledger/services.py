@@ -9,7 +9,7 @@ a Celery task, or a bot webhook handler (Phase 5) — none of which are
 guaranteed to have that context set.
 """
 
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from django.db import IntegrityError
 from django.db import transaction as db_transaction
@@ -70,7 +70,8 @@ def _enforce_hard_limits(*, tenant: Tenant, seller, check_amount: Decimal) -> No
     max_check_amount = GlobalSettings.load().max_check_amount
     if check_amount > max_check_amount:
         raise MaxCheckAmountExceededError(
-            f"Check amount {check_amount} exceeds the platform maximum of {max_check_amount}."
+            f"Chek summasi ({check_amount}) platforma uchun belgilangan maksimal "
+            f"miqdordan ({max_check_amount}) oshib ketdi."
         )
 
     limit = _effective_daily_txn_limit(seller)
@@ -82,7 +83,7 @@ def _enforce_hard_limits(*, tenant: Tenant, seller, check_amount: Decimal) -> No
         )
         if count_today >= limit:
             raise DailyTransactionLimitExceededError(
-                f"Seller {seller.pk} has reached their daily transaction limit of {limit}."
+                f"Kunlik tranzaksiya limiti ({limit}) ga yetdi."
             )
 
 
@@ -105,15 +106,20 @@ def check_daily_redemption_limit(*, tenant: Tenant, customer: Customer) -> None:
     )
     if count_today >= limit:
         raise DailyRedemptionLimitExceededError(
-            f"Customer {customer.pk} has reached their daily redemption limit of {limit}."
+            f"Kunlik ballarni ishlatish limiti ({limit} marta) ga yetdi."
         )
 
 
-def round_down_1000(value: Decimal) -> Decimal:
-    """CLAUDE.md §2 rule 9: always round down to the nearest 1,000 UZS."""
+def round_down_som(value: Decimal) -> Decimal:
+    """CLAUDE.md §2 rule 9: round down to the nearest whole so'm (no tiyin/
+    small change). Previously this rounded down to the nearest 1,000 UZS,
+    which silently zeroed out any cashback computed from a sub-1% rate
+    (e.g. 0.1%, 0.01%) on all but very large checks — rounding to whole
+    so'm instead keeps those small rates meaningful while still dropping
+    fractional tiyin, which don't circulate."""
     if value < 0:
-        raise ValueError("round_down_1000 expects a non-negative amount")
-    return ((value // 1000) * 1000).quantize(Decimal("0.01"))
+        raise ValueError("round_down_som expects a non-negative amount")
+    return value.to_integral_value(rounding=ROUND_DOWN).quantize(Decimal("0.01"))
 
 
 def calculate_earn(check_amount: Decimal, cash_paid: Decimal, rate: Decimal) -> Decimal:
@@ -121,7 +127,7 @@ def calculate_earn(check_amount: Decimal, cash_paid: Decimal, rate: Decimal) -> 
     future category-rate work per §2 rule 11) but the formula only uses
     cash_paid — that's rule 2: never earn on the cashback-paid portion.
     """
-    return round_down_1000(cash_paid * rate / Decimal("100"))
+    return round_down_som(cash_paid * rate / Decimal("100"))
 
 
 def calculate_redemption(
@@ -136,7 +142,7 @@ def calculate_redemption(
     allowed = min(requested, cap, customer_balance)
     if allowed <= 0:
         return Decimal("0")
-    return round_down_1000(allowed)
+    return round_down_som(allowed)
 
 
 def get_balance(customer: Customer) -> Decimal:
@@ -195,8 +201,7 @@ def post_earn_transaction(
             balance = get_balance(locked_customer)
             if cashback_spent > balance:
                 raise InsufficientBalanceError(
-                    f"Customer {locked_customer.pk} balance {balance} is less than "
-                    f"requested cashback_spent {cashback_spent}."
+                    f"Mijoz balansi ({balance}) so'ralgan {cashback_spent} balldan kam."
                 )
 
         cash_paid = check_amount - cashback_spent
@@ -373,9 +378,11 @@ def redeem_via_otp(
             .first()
         )
         if otp is None:
-            raise InvalidOTPError("OTP not found, already used, or for a different tenant.")
+            raise InvalidOTPError(
+                "OTP kod topilmadi, allaqachon ishlatilgan yoki boshqa tarmoqqa tegishli."
+            )
         if otp.is_expired():
-            raise InvalidOTPError("OTP has expired.")
+            raise InvalidOTPError("OTP kod muddati tugagan.")
 
         customer = Customer.objects.all_tenants().get(pk=otp.customer_id, tenant=tenant)
         check_daily_redemption_limit(tenant=tenant, customer=customer)
@@ -383,8 +390,8 @@ def redeem_via_otp(
         allowed = calculate_redemption(check_amount, otp.amount_requested, balance, tenant)
         if allowed <= 0:
             raise InvalidOTPError(
-                "Nothing redeemable: check amount below the tenant minimum, "
-                "or insufficient balance."
+                "Ishlatib bo'lmaydi: chek summasi tarmoq minimumidan past, "
+                "yoki balans yetarli emas."
             )
 
         txn = post_earn_transaction(

@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.accounts.serializers import TenantAwareTokenObtainPairSerializer
+from apps.seller_web.i18n import LANGUAGES, get_language, strings_for
 
 
 class SellerLoginView(LoginView):
@@ -13,6 +14,14 @@ class SellerLoginView(LoginView):
     register page for now; redirect target is fixed accordingly."""
 
     template_name = "accounts/login.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        language = get_language(self.request)
+        context["s"] = strings_for(language)
+        context["language"] = language
+        context["languages"] = LANGUAGES
+        return context
 
 
 class SellerLogoutView(LogoutView):

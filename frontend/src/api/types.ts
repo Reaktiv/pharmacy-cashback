@@ -12,7 +12,7 @@ export interface Tenant {
   created_at: string
 }
 
-export interface Bot {
+export interface TenantBot {
   id: number
   tenant: number
   username: string
@@ -43,14 +43,33 @@ export interface Seller {
   daily_txn_limit: number | null
 }
 
+export interface BranchManager {
+  id: number
+  username: string
+  branch: number
+  branch_name: string
+  is_active: boolean
+}
+
+export interface BroadcastMedia {
+  id: number
+  media_type: 'image' | 'video'
+  original_filename: string
+  size_bytes: number
+  url: string
+  created_at: string
+}
+
 export interface Broadcast {
   id: number
   title: string
   body: string
-  status: 'draft' | 'sending' | 'sent'
+  media: BroadcastMedia | null
+  status: 'draft' | 'sending' | 'sent' | 'failed'
   sent_count: number
   failed_count: number
   created_at: string
+  sent_at: string | null
 }
 
 export interface CrossTenantDashboardRow {
@@ -85,6 +104,20 @@ export interface DailyReportRow {
   day: string
   total_earned: number
   total_spent: number
+}
+
+export interface SellerTransactionRow {
+  id: number
+  created_at: string
+  customer_phone: string
+  check_amount: number
+  cash_paid: number
+  cashback_earned: number
+  cashback_spent: number
+  no_cashback: boolean
+  type: 'earn' | 'spend' | 'reversal'
+  status: 'active' | 'reversed'
+  flagged: boolean
 }
 
 export interface Paginated<T> {

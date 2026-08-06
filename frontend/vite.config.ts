@@ -19,6 +19,9 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: true, // bind 0.0.0.0 so it's reachable from outside a container
+      // Dev tunnels (ngrok/cloudflare) hand out a random subdomain per run,
+      // so a fixed allowlist isn't workable — trust any Host header here.
+      allowedHosts: true,
       proxy: {
         '/api': env.VITE_API_PROXY_TARGET || 'http://localhost:8001',
       },

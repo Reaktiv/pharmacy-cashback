@@ -7,6 +7,7 @@ from apps.ledger.reports import (
     get_cross_tenant_dashboard,
     get_daily_earn_spend_report,
     get_seller_report,
+    get_seller_transactions,
     get_total_liability,
 )
 from apps.ledger.services import post_earn_transaction, post_reversal
@@ -206,6 +207,48 @@ def test_seller_report_counts_txns_and_flags(
     assert row["txn_count"] == 2
     assert row["avg_check"] == Decimal("150000")
     assert row["flagged_count"] == 1
+
+
+@pytest.mark.django_db
+def test_seller_transactions_returns_full_history_newest_first(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    other_seller = make_seller(tenant, branch)
+    customer = make_customer(tenant, phone="+998900000009")
+
+    txn1 = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    txn2 = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("200000"),
+        idempotency_key="k2",
+    )
+    # A transaction by a different seller must not show up in this seller's history.
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=other_seller,
+        customer=customer,
+        check_amount=Decimal("300000"),
+        idempotency_key="k3",
+    )
+
+    rows = get_seller_transactions(tenant=tenant, seller_id=seller.pk)
+
+    assert [row.pk for row in rows] == [txn2.pk, txn1.pk]
+    assert rows[0].customer.phone == "+998900000009"
 
 
 @pytest.mark.django_db

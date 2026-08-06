@@ -1,9 +1,20 @@
 {% extends "seller_web/base.html" %}
 {% block body %}
-<h1>Not available</h1>
-<p>This page is only for seller accounts.</p>
-<form method="post" action="{% url 'accounts:logout' %}">
-  {% csrf_token %}
-  <button type="submit">Log out</button>
-</form>
+<div style="display:flex; justify-content:flex-end; margin-bottom:1rem;">
+  {% include "seller_web/_language_switcher.html" %}
+</div>
+<div style="text-align:center; padding:4rem 1.5rem; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-xl); box-shadow:var(--shadow-sm);">
+  <div style="display:grid; place-items:center; margin:0 auto 1.4rem; width:64px; height:64px; border-radius:var(--r-lg); background:var(--danger-bg); color:var(--danger);" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="30" height="30">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M9 9l6 6M15 9l-6 6"/>
+    </svg>
+  </div>
+  <h1>{{ s.forbidden_title }}</h1>
+  <p style="color:var(--text-muted); margin-top:0.5rem;">{{ s.forbidden_subtitle }}</p>
+  <form method="post" action="{% url 'accounts:logout' %}" data-confirm-logout style="margin-top:1.75rem; display:inline-block;">
+    {% csrf_token %}
+    <button type="submit" class="danger" style="width:auto; padding:0.7rem 1.75rem;">{{ s.logout }}</button>
+  </form>
+</div>
 {% endblock %}

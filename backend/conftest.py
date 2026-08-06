@@ -35,7 +35,14 @@ def make_user(db):
         username = username or f"user{counter['n']}"
         user = User.objects.create_user(username=username, password="pass1234")
         if role is not None:
-            UserProfile.objects.create(user=user, role=role, tenant=tenant, branch=branch)
+            # create_user() above already triggered the post_save signal that
+            # gives `user` a cached UNASSIGNED profile object; update_or_create
+            # here updates the *row* but not that cached object, so reassign it
+            # or `user.profile` would keep returning the stale unassigned one.
+            profile, _ = UserProfile.objects.update_or_create(
+                user=user, defaults={"role": role, "tenant": tenant, "branch": branch}
+            )
+            user.profile = profile
         return user
 
     return _make

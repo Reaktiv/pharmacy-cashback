@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.bot.telegram_client import TelegramTokenValidationError, validate_bot_token
 from apps.tenants.models import Bot, GlobalSettings, Tenant
 
 
@@ -80,6 +81,16 @@ class BotSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"token": "A token is required when creating a new bot."}
             )
+        token = attrs.get("token")
+        if token:
+            # Applies identically whether this is a brand-new bot or a
+            # token rotation on an existing one — CLAUDE.md-adjacent
+            # settings-page requirement: never save a token Telegram
+            # itself won't vouch for.
+            try:
+                validate_bot_token(token)
+            except TelegramTokenValidationError as exc:
+                raise serializers.ValidationError({"token": str(exc)}) from exc
         tenant = attrs.get("tenant") or getattr(self.instance, "tenant", None)
         if tenant is not None:
             existing = Bot.objects.all_tenants().filter(tenant=tenant)

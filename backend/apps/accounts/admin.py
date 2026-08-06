@@ -1,16 +1,17 @@
 from django.contrib import admin
 
 from apps.accounts.models import Branch, Seller, UserProfile
+from apps.tenants.admin_utils import TenantScopedAdminMixin
 
 
 @admin.register(UserProfile)
-class UserProfileAdmin(admin.ModelAdmin):
+class UserProfileAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("user", "role", "tenant", "branch")
     list_filter = ("role",)
 
 
 @admin.register(Branch)
-class BranchAdmin(admin.ModelAdmin):
+class BranchAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("name", "tenant", "is_active")
 
     def get_queryset(self, request):
@@ -20,7 +21,7 @@ class BranchAdmin(admin.ModelAdmin):
 
 
 @admin.register(Seller)
-class SellerAdmin(admin.ModelAdmin):
+class SellerAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("full_name", "branch", "tenant", "is_active")
 
     def get_queryset(self, request):

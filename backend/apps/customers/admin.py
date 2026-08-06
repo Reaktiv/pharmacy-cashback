@@ -1,10 +1,11 @@
 from django.contrib import admin
 
 from apps.customers.models import OTP, Customer, PendingCashback
+from apps.tenants.admin_utils import TenantScopedAdminMixin
 
 
 @admin.register(Customer)
-class CustomerAdmin(admin.ModelAdmin):
+class CustomerAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("phone", "full_name", "tenant", "is_active")
 
     def get_queryset(self, request):
@@ -12,7 +13,7 @@ class CustomerAdmin(admin.ModelAdmin):
 
 
 @admin.register(PendingCashback)
-class PendingCashbackAdmin(admin.ModelAdmin):
+class PendingCashbackAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("phone", "amount", "tenant", "claimed", "expires_at")
 
     def get_queryset(self, request):
@@ -20,7 +21,7 @@ class PendingCashbackAdmin(admin.ModelAdmin):
 
 
 @admin.register(OTP)
-class OTPAdmin(admin.ModelAdmin):
+class OTPAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = ("customer", "code", "amount_requested", "used", "expires_at")
 
     def get_queryset(self, request):

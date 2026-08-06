@@ -22,6 +22,11 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# Needed when the app is served through a tunnel (ngrok, jprq, etc.) whose
+# public HTTPS origin differs from the Host header Django sees — otherwise
+# Django's CSRF check rejects browser POSTs (login, seller-web forms).
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
 # FERNET_KEY encrypts Bot.token_encrypted (CLAUDE.md §5). Never log or commit it.
 FERNET_KEY = env("FERNET_KEY")
 
@@ -106,6 +111,14 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Broadcast media (images/videos attached to a tenant's Xabarnomalar).
+# MEDIA_URL is intentionally never wired into urlpatterns for direct static
+# serving — that would bypass tenant isolation (CLAUDE.md §4). The only way
+# to read a file back is apps.broadcasts.api_views.BroadcastMediaFileView,
+# which goes through the tenant-filtered BroadcastMedia manager first.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

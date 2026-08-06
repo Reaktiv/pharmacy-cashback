@@ -58,6 +58,25 @@ def _update(update_id, **fields):
     return {"update_id": update_id, **fields}
 
 
+def _callback_update(update_id, chat_id, user_id, data, first_name="Aziz"):
+    return _update(
+        update_id,
+        callback_query={
+            "id": f"cbq{update_id}",
+            "from": {"id": user_id, "is_bot": False, "first_name": first_name},
+            "chat_instance": "abc",
+            "data": data,
+            "message": {
+                "message_id": update_id,
+                "date": 1234567890,
+                "chat": {"id": chat_id, "type": "private"},
+                "from": {"id": 999999, "is_bot": True, "first_name": "Bot"},
+                "text": "placeholder",
+            },
+        },
+    )
+
+
 def _message_update(update_id, chat_id, user_id, **extra):
     return _update(
         update_id,
@@ -78,7 +97,9 @@ def test_unknown_webhook_secret_returns_404(client):
 
 
 @pytest.mark.django_db
-def test_start_command_sends_the_contact_request_keyboard(client, bot_row, mock_outbound_telegram):
+def test_start_command_sends_the_language_picker_for_a_new_user(
+    client, bot_row, mock_outbound_telegram
+):
     payload = _message_update(
         1,
         chat_id=111,
@@ -94,7 +115,54 @@ def test_start_command_sends_the_contact_request_keyboard(client, bot_row, mock_
     assert response.status_code == 200
     sent = [c for c in mock_outbound_telegram if c.__class__.__name__ == "SendMessage"]
     assert len(sent) == 1
-    assert sent[0].reply_markup.keyboard[0][0].request_contact is True
+    codes = {btn.callback_data for row in sent[0].reply_markup.inline_keyboard for btn in row}
+    assert codes == {"reglang:uz", "reglang:en", "reglang:ru"}
+
+
+@pytest.mark.django_db
+def test_picking_a_language_sends_the_contact_request_keyboard_in_that_language(
+    client, bot_row, mock_outbound_telegram
+):
+    client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(1, chat_id=111, user_id=111, text="/start"),
+        content_type="application/json",
+    )
+
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_callback_update(2, chat_id=111, user_id=111, data="reglang:en"),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    sent = [c for c in mock_outbound_telegram if c.__class__.__name__ == "SendMessage"]
+    assert len(sent) == 2  # the language picker, then this contact-request keyboard
+    assert sent[-1].reply_markup.keyboard[0][0].request_contact is True
+    assert sent[-1].reply_markup.keyboard[0][0].text == "Share my phone number"
+    assert "Welcome to" in sent[-1].text
+
+
+@pytest.mark.django_db
+def test_start_command_greets_an_already_registered_customer_without_asking_again(
+    client, bot_row, mock_outbound_telegram, make_customer
+):
+    tenant = bot_row["tenant"]
+    customer = make_customer(tenant, phone="+998900000005")
+    customer.telegram_id = 555
+    customer.save(update_fields=["telegram_id"])
+
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(1, chat_id=555, user_id=555, text="/start"),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    sent = [c for c in mock_outbound_telegram if c.__class__.__name__ == "SendMessage"]
+    assert len(sent) == 1
+    assert "Qaytib kelganingizdan xursandmiz" in sent[0].text
+    assert sent[0].reply_markup.keyboard[0][0].request_contact is not True
 
 
 @pytest.mark.django_db
@@ -122,9 +190,16 @@ def test_full_registration_flow_registers_customer_and_claims_pending_cashback(
         content_type="application/json",
     )
 
+    # pick a language
+    client.post(
+        _webhook_url(bot_row["row"]),
+        data=_callback_update(2, chat_id=111, user_id=111, data="reglang:uz"),
+        content_type="application/json",
+    )
+
     # share contact
     contact_update = _message_update(
-        2,
+        3,
         chat_id=111,
         user_id=111,
         contact={"phone_number": "998901234567", "first_name": "Aziz", "user_id": 111},
@@ -135,22 +210,7 @@ def test_full_registration_flow_registers_customer_and_claims_pending_cashback(
     assert response.status_code == 200
 
     # tap "I agree"
-    consent_update = _update(
-        3,
-        callback_query={
-            "id": "cbq1",
-            "from": {"id": 111, "is_bot": False, "first_name": "Aziz"},
-            "chat_instance": "abc",
-            "data": "consent:accept",
-            "message": {
-                "message_id": 3,
-                "date": 1234567892,
-                "chat": {"id": 111, "type": "private"},
-                "from": {"id": 999999, "is_bot": True, "first_name": "Bot"},
-                "text": "Please confirm:",
-            },
-        },
-    )
+    consent_update = _callback_update(4, chat_id=111, user_id=111, data="consent:accept")
     response = client.post(
         _webhook_url(bot_row["row"]), data=consent_update, content_type="application/json"
     )
@@ -159,6 +219,7 @@ def test_full_registration_flow_registers_customer_and_claims_pending_cashback(
     customer = Customer.objects.all_tenants().get(tenant=tenant, phone="+998901234567")
     assert customer.telegram_id == 111
     assert customer.consent_given_at is not None
+    assert customer.language == "uz"
     assert get_balance(customer) == Decimal("10000.00")  # the pre-registration sale, claimed
 
     # the registration confirmation should mention the claimed amount + balance
@@ -177,13 +238,13 @@ def test_balance_button_reports_current_balance(
 
     response = client.post(
         _webhook_url(bot_row["row"]),
-        data=_message_update(1, chat_id=222, user_id=222, text="💰 Balance"),
+        data=_message_update(1, chat_id=222, user_id=222, text="💰 Balans"),
         content_type="application/json",
     )
 
     assert response.status_code == 200
     texts = _sent_texts(mock_outbound_telegram)
-    assert "Your balance: 0" in texts[-1]
+    assert "Balansingiz: 0" in texts[-1]
 
 
 @pytest.mark.django_db
@@ -206,7 +267,7 @@ def test_redeem_flow_issues_an_otp(client, bot_row, mock_outbound_telegram, make
     # tap "Redeem"
     client.post(
         _webhook_url(bot_row["row"]),
-        data=_message_update(1, chat_id=333, user_id=333, text="🎟 Redeem"),
+        data=_message_update(1, chat_id=333, user_id=333, text="🎟 Ballarni ishlatish"),
         content_type="application/json",
     )
     # send the amount
@@ -220,7 +281,7 @@ def test_redeem_flow_issues_an_otp(client, bot_row, mock_outbound_telegram, make
     otp = OTP.objects.all_tenants().get(tenant=tenant, customer=customer)
     assert otp.amount_requested == Decimal("20000")
     texts = _sent_texts(mock_outbound_telegram)
-    assert "Your code:" in texts[-1]
+    assert "Sizning kodingiz:" in texts[-1]
     assert otp.code in texts[-1]
 
 
@@ -268,3 +329,115 @@ def test_report_button_flags_the_transaction(
 
     assert response.status_code == 200
     assert Transaction.objects.all_tenants().get(pk=txn.pk).flagged is True
+
+
+@pytest.mark.django_db
+def test_settings_button_shows_the_settings_menu(
+    client, bot_row, mock_outbound_telegram, make_customer
+):
+    tenant = bot_row["tenant"]
+    customer = make_customer(tenant, phone="+998900000006")
+    customer.telegram_id = 666
+    customer.save(update_fields=["telegram_id"])
+
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(1, chat_id=666, user_id=666, text="⚙️ Sozlamalar"),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    sent = [c for c in mock_outbound_telegram if c.__class__.__name__ == "SendMessage"]
+    assert len(sent) == 1
+    codes = {btn.callback_data for row in sent[0].reply_markup.inline_keyboard for btn in row}
+    assert codes == {"settings:name", "settings:language"}
+
+
+@pytest.mark.django_db
+def test_settings_change_name_flow_updates_the_customers_full_name(
+    client, bot_row, mock_outbound_telegram, make_customer
+):
+    tenant = bot_row["tenant"]
+    customer = make_customer(tenant, phone="+998900000007")
+    customer.telegram_id = 777
+    customer.save(update_fields=["telegram_id"])
+
+    client.post(
+        _webhook_url(bot_row["row"]),
+        data=_callback_update(1, chat_id=777, user_id=777, data="settings:name"),
+        content_type="application/json",
+    )
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(2, chat_id=777, user_id=777, text="Yangi Ism"),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    customer.refresh_from_db()
+    assert customer.full_name == "Yangi Ism"
+    texts = _sent_texts(mock_outbound_telegram)
+    assert "Yangi Ism" in texts[-1]
+
+
+@pytest.mark.django_db
+def test_settings_change_language_flow_updates_the_customers_language_and_replies_in_it(
+    client, bot_row, mock_outbound_telegram, make_customer
+):
+    tenant = bot_row["tenant"]
+    customer = make_customer(tenant, phone="+998900000008")
+    customer.telegram_id = 888
+    customer.save(update_fields=["telegram_id"])
+    assert customer.language == "uz"
+
+    client.post(
+        _webhook_url(bot_row["row"]),
+        data=_callback_update(1, chat_id=888, user_id=888, data="settings:language"),
+        content_type="application/json",
+    )
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_callback_update(2, chat_id=888, user_id=888, data="setlang:ru"),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    customer.refresh_from_db()
+    assert customer.language == "ru"
+    texts = _sent_texts(mock_outbound_telegram)
+    assert texts[-1] == "Язык изменён."
+
+
+@pytest.mark.django_db
+def test_notification_after_a_language_change_is_sent_in_the_new_language(
+    bot_row, make_customer
+):
+    """Reproduces the exact scenario reported: a customer switches to
+    Russian via Settings, then a later cashback notification (fired by
+    apps.bot.tasks.notify_transaction, off apps.ledger.services'
+    post_earn_transaction on_commit hook) must use that new language, not
+    whatever it was at registration time."""
+    from apps.bot.services import format_notification_text
+    from apps.ledger.services import post_earn_transaction
+
+    tenant = bot_row["tenant"]
+    branch = bot_row["branch"]
+    seller = bot_row["seller"]
+    customer = make_customer(tenant, phone="+998900000009")
+    customer.telegram_id = 999
+    customer.language = "ru"
+    customer.save(update_fields=["telegram_id", "language"])
+
+    txn = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+
+    text = format_notification_text(txn)
+
+    assert "баллов" in text
+    assert "qo'shildi" not in text

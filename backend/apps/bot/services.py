@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
 
+from apps.bot.i18n import DEFAULT_LANGUAGE, t
 from apps.customers.models import OTP, Customer, generate_otp_code
 from apps.ledger.models import Transaction
 from apps.ledger.services import (
@@ -39,14 +40,21 @@ def get_customer_by_telegram_id(*, tenant: Tenant, telegram_id: int) -> Customer
 def format_balance_message(customer: Customer) -> str:
     balance = get_balance(customer)
     max_redeem_percent = GlobalSettings.load().max_redeem_percent
-    return (
-        f"Your balance: {balance} points.\n"
-        f"You can use up to {max_redeem_percent}% of any purchase total."
-    )
+    return t(customer.language, "balance_message", balance=balance, percent=max_redeem_percent)
+
+
+def get_customer_language(*, tenant: Tenant, telegram_id: int) -> str:
+    """Used wherever a handler needs the right language for a keyboard/
+    prompt before (or without) fetching the full customer — e.g. the redeem
+    prompt, or the settings menu. Falls back to DEFAULT_LANGUAGE for an
+    unregistered/unknown telegram_id rather than raising, since callers hit
+    this in places a registration race could plausibly leave no row yet."""
+    customer = get_customer_by_telegram_id(tenant=tenant, telegram_id=telegram_id)
+    return customer.language if customer is not None else DEFAULT_LANGUAGE
 
 
 def handle_registration(
-    *, tenant: Tenant, telegram_id: int, phone: str, full_name: str
+    *, tenant: Tenant, telegram_id: int, phone: str, full_name: str, language: str = DEFAULT_LANGUAGE
 ) -> str:
     """CLAUDE.md §7a: register/claim PendingCashback on /start + contact +
     consent. Returns the fully-formatted reply text."""
@@ -57,6 +65,7 @@ def handle_registration(
         defaults={
             "telegram_id": telegram_id,
             "full_name": full_name,
+            "language": language,
             "consent_given_at": timezone.now(),
         },
     )
@@ -68,10 +77,10 @@ def handle_registration(
 
     claimed = claim_pending_cashback(customer=customer)
 
-    lines = ["You're registered! 🎉"]
+    lines = [t(customer.language, "registered_success")]
     if claimed:
-        total_claimed = sum((t.cashback_earned for t in claimed), Decimal("0"))
-        lines.append(f"We credited {total_claimed} pending points from earlier purchases.")
+        total_claimed = sum((row.cashback_earned for row in claimed), Decimal("0"))
+        lines.append(t(customer.language, "claimed_amount", amount=total_claimed))
     lines.append(format_balance_message(customer))
     return "\n".join(lines)
 
@@ -79,7 +88,7 @@ def handle_registration(
 def handle_balance_query(*, tenant: Tenant, telegram_id: int) -> str:
     customer = get_customer_by_telegram_id(tenant=tenant, telegram_id=telegram_id)
     if customer is None:
-        return "You're not registered yet — send /start to begin."
+        return t(DEFAULT_LANGUAGE, "not_registered")
     return format_balance_message(customer)
 
 
@@ -87,26 +96,46 @@ def customer_is_registered(*, tenant: Tenant, telegram_id: int) -> bool:
     return get_customer_by_telegram_id(tenant=tenant, telegram_id=telegram_id) is not None
 
 
+def update_customer_name(*, tenant: Tenant, telegram_id: int, full_name: str) -> Customer | None:
+    customer = get_customer_by_telegram_id(tenant=tenant, telegram_id=telegram_id)
+    if customer is None:
+        return None
+    customer.full_name = full_name
+    customer.save(update_fields=["full_name"])
+    return customer
+
+
+def update_customer_language(
+    *, tenant: Tenant, telegram_id: int, language: str
+) -> Customer | None:
+    customer = get_customer_by_telegram_id(tenant=tenant, telegram_id=telegram_id)
+    if customer is None:
+        return None
+    customer.language = language
+    customer.save(update_fields=["language"])
+    return customer
+
+
 def handle_redeem_request(*, tenant: Tenant, telegram_id: int, raw_amount: str) -> str:
     customer = get_customer_by_telegram_id(tenant=tenant, telegram_id=telegram_id)
     if customer is None:
-        return "You're not registered yet — send /start to begin."
+        return t(DEFAULT_LANGUAGE, "not_registered")
     try:
         otp = _create_redemption_otp(tenant=tenant, customer=customer, raw_amount=raw_amount)
     except RedeemAmountError as exc:
         return str(exc)
-    return f"Your code: {otp.code}\nShow this to the cashier. It expires in 5 minutes."
+    return t(customer.language, "redeem_code", code=otp.code)
 
 
 def _create_redemption_otp(*, tenant: Tenant, customer: Customer, raw_amount: str) -> OTP:
     try:
         amount = Decimal(raw_amount.strip().replace(",", ""))
     except InvalidOperation as exc:
-        raise RedeemAmountError("Please send a valid number.") from exc
+        raise RedeemAmountError(t(customer.language, "redeem_invalid_number")) from exc
     if amount <= 0:
-        raise RedeemAmountError("Amount must be greater than zero.")
+        raise RedeemAmountError(t(customer.language, "redeem_amount_must_be_positive"))
     if amount > get_balance(customer):
-        raise RedeemAmountError("You don't have that many points.")
+        raise RedeemAmountError(t(customer.language, "redeem_insufficient_balance"))
 
     # CLAUDE.md §8: reject early here rather than only at the register, so
     # the customer isn't handed a code that's guaranteed to fail. The
@@ -123,19 +152,27 @@ def _create_redemption_otp(*, tenant: Tenant, customer: Customer, raw_amount: st
 
 def format_notification_text(txn: Transaction) -> str:
     """CLAUDE.md §7a auto-notification text."""
+    language = txn.customer.language
     if txn.type == Transaction.Type.REVERSAL:
-        parts = ["⚠️ A previous transaction was corrected."]
+        parts = [t(language, "notif_reversal")]
     else:
         parts = []
         if txn.cashback_earned > 0:
             parts.append(
-                f"✅ {txn.cashback_earned} points added from a {txn.check_amount} purchase."
+                t(language, "notif_earned", check_amount=txn.check_amount, earned=txn.cashback_earned)
             )
         if txn.cashback_spent > 0:
-            parts.append(f"✅ {txn.cashback_spent} points spent.")
+            parts.append(t(language, "notif_spent", spent=txn.cashback_spent))
         if not parts:
-            parts.append("Your purchase was recorded.")
-    parts.append(f"Balance: {get_balance(txn.customer)}.")
+            if txn.no_cashback:
+                # CLAUDE.md §2 rule 11 (prescription-only checkbox): earned
+                # is deliberately 0 here, not a rounding fluke — say so, or
+                # the customer just sees an unchanged balance and assumes
+                # something broke.
+                parts.append(t(language, "notif_no_cashback"))
+            else:
+                parts.append(t(language, "notif_generic"))
+    parts.append(t(language, "notif_balance_suffix", balance=get_balance(txn.customer)))
     return "\n".join(parts)
 
 
@@ -151,7 +188,7 @@ def handle_report(*, tenant: Tenant, telegram_id: int, transaction_id: int) -> s
         .first()
     )
     if txn is None or txn.customer.telegram_id != telegram_id:
-        return "Sorry, that report could not be processed."
+        return t(DEFAULT_LANGUAGE, "report_invalid")
 
     flag_transaction(transaction_id=txn.pk)
-    return "Thanks — this has been noted. A manager will review it."
+    return t(txn.customer.language, "report_thanks")

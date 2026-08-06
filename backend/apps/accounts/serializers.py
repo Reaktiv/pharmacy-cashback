@@ -82,13 +82,11 @@ class SellerSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"branch": "Branch must belong to your tenant."})
 
         with db_transaction.atomic():
+            # User.objects.create_user() triggers a signal that gives `user`
+            # a bare UNASSIGNED profile; creating the Seller row just below
+            # triggers another signal that flips it to role=SELLER with this
+            # tenant/branch (apps.accounts.signals).
             user = User.objects.create_user(username=username, password=password)
-            # tenant/branch match the Seller row created just below by
-            # construction (same variables), satisfying Seller.clean()'s
-            # profile-consistency check without needing to re-derive it.
-            UserProfile.objects.create(
-                user=user, role=UserProfile.Role.SELLER, tenant=tenant, branch=branch
-            )
             seller = Seller.objects.all_tenants().create(
                 tenant=tenant, user=user, **validated_data
             )
@@ -103,4 +101,81 @@ class SellerSerializer(serializers.ModelSerializer):
         if password:
             instance.user.set_password(password)
             instance.user.save(update_fields=["password"])
+        return instance
+
+
+class BranchManagerSerializer(serializers.Serializer):
+    """Creates/manages a branch manager: a User + UserProfile(role=
+    BRANCH_MANAGER) pair scoped to one branch within the tenant admin's own
+    tenant (CLAUDE.md §3: tenant admin manages branch managers; only the
+    branch manager themselves manages sellers — see SellerSerializer).
+
+    There's no separate BranchManager model (CLAUDE.md §5) — UserProfile is
+    the whole record, so this is a plain Serializer rather than a
+    ModelSerializer.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(write_only=True, required=False)
+    password = serializers.CharField(
+        write_only=True, required=False, style={"input_type": "password"}
+    )
+    # `queryset=Branch.objects` (the manager, not `.all()`): DRF only calls
+    # `.all()` on it lazily at validation time, when a request's tenant
+    # context is actually bound — evaluating it eagerly here at class
+    # definition time would hit TenantManager with no tenant bound yet.
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects)
+    branch_name = serializers.CharField(source="branch.name", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", required=False)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["username"] = instance.user.username
+        return data
+
+    def validate(self, attrs):
+        if self.instance is None:
+            if not attrs.get("username") or not attrs.get("password"):
+                raise serializers.ValidationError(
+                    "username and password are required when creating a branch manager."
+                )
+        return attrs
+
+    def create(self, validated_data):
+        username = validated_data.pop("username")
+        password = validated_data.pop("password")
+        tenant = self.context["request"].user.profile.tenant
+        branch = validated_data["branch"]
+        if branch.tenant_id != tenant.id:
+            raise serializers.ValidationError({"branch": "Branch must belong to your tenant."})
+
+        with db_transaction.atomic():
+            user = User.objects.create_user(username=username, password=password)
+            profile, _ = UserProfile.objects.update_or_create(
+                user=user,
+                defaults={
+                    "role": UserProfile.Role.BRANCH_MANAGER,
+                    "tenant": tenant,
+                    "branch": branch,
+                },
+            )
+        return profile
+
+    def update(self, instance, validated_data):
+        validated_data.pop("username", None)
+        password = validated_data.pop("password", None)
+        is_active = validated_data.pop("user", {}).get("is_active")
+        branch = validated_data.get("branch")
+        if branch is not None:
+            tenant = self.context["request"].user.profile.tenant
+            if branch.tenant_id != tenant.id:
+                raise serializers.ValidationError({"branch": "Branch must belong to your tenant."})
+            instance.branch = branch
+            instance.save(update_fields=["branch"])
+        if password:
+            instance.user.set_password(password)
+            instance.user.save(update_fields=["password"])
+        if is_active is not None:
+            instance.user.is_active = is_active
+            instance.user.save(update_fields=["is_active"])
         return instance

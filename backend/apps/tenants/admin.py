@@ -2,6 +2,8 @@ from django import forms
 from django.contrib import admin
 
 from apps.audit.services import log_action
+from apps.bot.telegram_client import TelegramTokenValidationError, validate_bot_token
+from apps.tenants.admin_utils import TenantScopedAdminMixin
 from apps.tenants.models import Bot, GlobalSettings, Tenant
 
 
@@ -72,6 +74,19 @@ class BotAdminForm(forms.ModelForm):
         model = Bot
         exclude = ["token_encrypted"]
 
+    def clean_token(self):
+        token = self.cleaned_data.get("token")
+        if not token:
+            return token
+        # Same rule as the API path (apps/tenants/serializers.py::BotSerializer)
+        # — kept in one place (apps/bot/telegram_client.py::validate_bot_token)
+        # so admin and API can't drift on what counts as a valid token.
+        try:
+            validate_bot_token(token)
+        except TelegramTokenValidationError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        return token
+
     def clean(self):
         cleaned = super().clean()
         if self.instance.pk is None and not cleaned.get("token"):
@@ -89,7 +104,7 @@ class BotAdminForm(forms.ModelForm):
 
 
 @admin.register(Bot)
-class BotAdmin(admin.ModelAdmin):
+class BotAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     form = BotAdminForm
     list_display = ("username", "tenant", "is_active")
     readonly_fields = ("webhook_secret",)

@@ -9,24 +9,28 @@ doesn't hit the sync/async issues the webhook view has to work around.
 import asyncio
 import logging
 
+from aiogram.exceptions import TelegramAPIError
 from celery import shared_task
 from django.conf import settings
 
-from apps.bot.telegram_client import build_client
+from apps.bot.telegram_client import build_client, build_client_from_token
 from apps.ledger.models import Transaction
 from apps.tenants.models import Bot as BotRow
 
 logger = logging.getLogger(__name__)
 
 
-def _report_keyboard(transaction_id: int):
+def _report_keyboard(transaction_id: int, language: str):
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    from apps.bot.i18n import t
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Wrong amount? Report", callback_data=f"report:{transaction_id}"
+                    text=t(language, "report_button"),
+                    callback_data=f"report:{transaction_id}",
                 )
             ]
         ]
@@ -52,7 +56,7 @@ def _notify_transaction_sync(transaction_id: int) -> None:
         return
 
     text = format_notification_text(txn)
-    keyboard = _report_keyboard(txn.pk)
+    keyboard = _report_keyboard(txn.pk, customer.language)
 
     async def _send():
         async with build_client(bot_row) as bot:
@@ -88,3 +92,46 @@ def register_webhook(bot_id: int) -> None:
     Bot row auto-registers its webhook with no redeploy."""
     bot_row = BotRow.objects.all_tenants().get(pk=bot_id)
     _register_webhook_sync(bot_row)
+
+
+def _rotate_bot_credentials_sync(bot_id: int, old_token: str) -> None:
+    bot_row = BotRow.objects.all_tenants().get(pk=bot_id)
+
+    async def _do() -> str | None:
+        # Telegram doesn't clear the OLD bot's webhook just because a
+        # different bot registers the same URL — without this, the old
+        # bot keeps forwarding updates here too, and they get answered
+        # using the tenant's new (current) token, which looks like "I
+        # messaged the old bot but the new bot replied."
+        try:
+            async with build_client_from_token(old_token) as old_bot:
+                await old_bot.delete_webhook()
+        except TelegramAPIError:
+            # Old token may already be invalid/revoked — nothing to clean
+            # up on Telegram's side in that case, and that's fine.
+            logger.info(
+                "Could not delete the old webhook for bot %s (token may already be revoked).",
+                bot_id,
+            )
+
+        # The username belongs to whichever bot the token actually
+        # authenticates as — refresh it from Telegram rather than trust
+        # whatever was left over from before the rotation.
+        async with build_client(bot_row) as new_bot:
+            me = await new_bot.get_me()
+        return me.username
+
+    # The ORM save has to happen back in sync land — Django forbids sync
+    # DB calls from inside the async block above.
+    new_username = asyncio.run(_do())
+    if new_username and new_username != bot_row.username:
+        bot_row.username = new_username
+        bot_row.save(update_fields=["username"])
+
+
+@shared_task
+def rotate_bot_credentials(bot_id: int, old_token: str) -> None:
+    """Fired when a Bot's token is rotated (apps/tenants/api_views.py):
+    deregisters the old token's webhook and refreshes the stored username
+    to match the new token's actual bot identity."""
+    _rotate_bot_credentials_sync(bot_id, old_token)

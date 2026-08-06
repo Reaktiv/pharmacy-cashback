@@ -129,6 +129,19 @@ def get_seller_report(*, tenant: Tenant, date_from=None, date_to=None) -> list[d
     ]
 
 
+def get_seller_transactions(*, tenant: Tenant, seller_id: int) -> list[Transaction]:
+    """Full transaction history for one seller, newest first — the
+    branch-manager drill-down from the seller report row (CLAUDE.md §7c
+    reports). Includes the customer for phone-number display; the caller
+    still owns branch-scoping the seller itself before calling this."""
+    return list(
+        Transaction.objects.all_tenants()
+        .filter(tenant=tenant, seller_id=seller_id)
+        .select_related("customer")
+        .order_by("-created_at")
+    )
+
+
 def get_daily_earn_spend_report(*, tenant: Tenant, days: int = 30) -> list[dict]:
     """CLAUDE.md §7c: daily earn/spend totals over the last `days` days."""
     since = timezone.localdate() - timezone.timedelta(days=days - 1)

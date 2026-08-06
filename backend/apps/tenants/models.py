@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.tenants.context import get_current_tenant
+from apps.tenants.context import get_current_tenant, tenant_check_bypassed
 from apps.tenants.crypto import decrypt_token, encrypt_token
 
 
@@ -21,6 +21,8 @@ class TenantManager(models.Manager):
     def get_queryset(self):
         tenant = get_current_tenant()
         if tenant is None:
+            if tenant_check_bypassed():
+                return super().get_queryset()
             raise TenantContextError(
                 f"{self.model.__name__} query attempted with no tenant bound to the "
                 f"current context. Use `{self.model.__name__}.objects.all_tenants()` "

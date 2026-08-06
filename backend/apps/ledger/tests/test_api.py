@@ -196,3 +196,69 @@ def test_superadmin_report_without_tenant_id_is_rejected(api_client_for, make_us
     response = client.get("/api/reports/branches/")
 
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_branch_manager_can_view_their_own_sellers_transaction_history(
+    api_client_for, make_user, make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant, phone="+998900000001")
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get(f"/api/reports/seller-transactions/?seller_id={seller.pk}")
+
+    assert response.status_code == 200
+    assert len(response.data) == 1
+    assert response.data[0]["customer_phone"] == "+998900000001"
+    assert response.data[0]["cashback_earned"] == Decimal("10000.00")
+
+
+@pytest.mark.django_db
+def test_branch_manager_cannot_view_another_branchs_seller_transaction_history(
+    api_client_for, make_user, make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch_a = make_branch(tenant)
+    branch_b = make_branch(tenant)
+    seller_b = make_seller(tenant, branch_b)
+    customer = make_customer(tenant)
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch_b,
+        seller=seller_b,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    manager_a = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch_a)
+    client = api_client_for(manager_a)
+
+    response = client.get(f"/api/reports/seller-transactions/?seller_id={seller_b.pk}")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_seller_transactions_requires_seller_id(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get("/api/reports/seller-transactions/")
+
+    assert response.status_code == 400

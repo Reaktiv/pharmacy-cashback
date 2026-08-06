@@ -51,9 +51,9 @@ def test_handle_registration_creates_a_new_customer_and_claims_pending_cashback(
 
     customer = Customer.objects.all_tenants().get(tenant=tenant, phone="+998901234567")
     assert customer.telegram_id == 555
-    assert "registered" in text.lower()
+    assert "ro'yxatdan o'tdingiz" in text.lower()
     assert "10000.00" in text  # claimed amount mentioned
-    assert "Your balance: 10000.00" in text
+    assert "Balansingiz: 10000.00" in text
 
 
 @pytest.mark.django_db
@@ -69,7 +69,7 @@ def test_handle_registration_is_idempotent_for_the_same_telegram_user(make_tenan
 def test_handle_balance_query_for_unregistered_user(make_tenant):
     tenant = make_tenant("t")
     text = handle_balance_query(tenant=tenant, telegram_id=999)
-    assert "not registered" in text.lower()
+    assert "ro'yxatdan o'tmagansiz" in text.lower()
 
 
 @pytest.mark.django_db
@@ -121,7 +121,7 @@ def test_handle_redeem_request_creates_an_otp_within_balance(
 
     text = handle_redeem_request(tenant=tenant, telegram_id=555, raw_amount="20000")
 
-    assert "Your code:" in text
+    assert "Sizning kodingiz:" in text
     otp = OTP.objects.all_tenants().get(tenant=tenant, customer=customer)
     assert otp.amount_requested == Decimal("20000")
     assert str(otp.code) in text
@@ -134,7 +134,7 @@ def test_handle_redeem_request_rejects_amount_above_balance(make_tenant):
 
     text = handle_redeem_request(tenant=tenant, telegram_id=555, raw_amount="50000")
 
-    assert "don't have that many points" in text
+    assert "bu qadar ball yo'q" in text
     assert not OTP.objects.all_tenants().filter(tenant=tenant).exists()
 
 
@@ -145,7 +145,7 @@ def test_handle_redeem_request_rejects_garbage_input(make_tenant):
 
     text = handle_redeem_request(tenant=tenant, telegram_id=555, raw_amount="not a number")
 
-    assert "valid number" in text.lower()
+    assert "to'g'ri raqam" in text.lower()
 
 
 def test_redeem_amount_error_is_a_plain_exception():
@@ -172,8 +172,36 @@ def test_format_notification_text_for_an_earn_only_transaction(
 
     text = format_notification_text(txn)
 
-    assert "10000.00 points added" in text
-    assert "Balance: 10000.00" in text
+    assert "so'mlik xariddan 10000.00 ball qo'shildi" in text
+    assert "Balans: 10000.00" in text
+
+
+@pytest.mark.django_db
+def test_format_notification_text_for_a_no_cashback_transaction(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    """CLAUDE.md §2 rule 11: the prescription-only checkbox zeroes earned on
+    purpose — the notification must say so, not just silently show an
+    unchanged balance like a generic zero-amount purchase would."""
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+    txn = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        no_cashback=True,
+        idempotency_key="k1",
+    )
+
+    text = format_notification_text(txn)
+
+    assert "ball berilmadi" in text
+    assert "retsept" in text
+    assert "Balans: 0" in text
 
 
 @pytest.mark.django_db
@@ -199,7 +227,7 @@ def test_handle_report_flags_the_reporting_customers_own_transaction(
 
     text = handle_report(tenant=tenant, telegram_id=777, transaction_id=txn.pk)
 
-    assert "noted" in text.lower()
+    assert "qayd etildi" in text.lower()
     assert Transaction.objects.all_tenants().get(pk=txn.pk).flagged is True
 
 
@@ -226,7 +254,7 @@ def test_handle_report_rejects_a_transaction_belonging_to_someone_else(
 
     text = handle_report(tenant=tenant, telegram_id=999, transaction_id=txn.pk)
 
-    assert "could not be processed" in text
+    assert "qayta ishlab bo'lmadi" in text
     assert Transaction.objects.all_tenants().get(pk=txn.pk).flagged is False
 
 
@@ -234,4 +262,4 @@ def test_handle_report_rejects_a_transaction_belonging_to_someone_else(
 def test_handle_report_rejects_a_nonexistent_transaction_id(make_tenant):
     tenant = make_tenant("t")
     text = handle_report(tenant=tenant, telegram_id=777, transaction_id=999999)
-    assert "could not be processed" in text
+    assert "qayta ishlab bo'lmadi" in text

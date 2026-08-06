@@ -1,11 +1,24 @@
 {% extends "seller_web/base.html" %}
 {% block body %}
 <div class="top-bar">
-  <h1>{{ seller.branch.tenant.name }} — {{ seller.branch.name }}</h1>
-  <form method="post" action="{% url 'accounts:logout' %}">
-    {% csrf_token %}
-    <button type="submit" style="width:auto; background:#57606a; padding:0.35rem 0.75rem;">Log out</button>
-  </form>
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 4v6.5M12 13.5V20M4 12h6.5M13.5 12H20" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <div>
+      <h1>{{ seller.branch.tenant.name }} — {{ seller.branch.name }}</h1>
+      <p class="seller-name">{{ s.seller_label }}: {{ seller.full_name }}</p>
+    </div>
+  </div>
+  <div class="top-bar-actions">
+    {% include "seller_web/_language_switcher.html" %}
+    <form method="post" action="{% url 'accounts:logout' %}" data-confirm-logout>
+      {% csrf_token %}
+      <button type="submit" class="secondary danger">{{ s.logout }}</button>
+    </form>
+  </div>
 </div>
 
 {% if messages %}
@@ -16,31 +29,73 @@
 </ul>
 {% endif %}
 
-<form method="post" action="{% url 'seller_web:earn' %}">
-  {% csrf_token %}
-  <fieldset>
-    <legend>Earn</legend>
-    {{ earn_form.idempotency_key }}
-    <label for="{{ earn_form.check_amount.id_for_label }}">{{ earn_form.check_amount.label }}</label>
-    {{ earn_form.check_amount }}
-    <label for="{{ earn_form.phone.id_for_label }}">{{ earn_form.phone.label }}</label>
-    {{ earn_form.phone }}
-    <label>{{ earn_form.no_cashback }} {{ earn_form.no_cashback.label }}</label>
-    <button type="submit">Record sale</button>
-  </fieldset>
-</form>
+<div class="form-grid">
+  <form method="post" action="{% url 'seller_web:earn' %}">
+    {% csrf_token %}
+    <fieldset>
+      <legend>
+        <span class="legend-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M7 14h4"/></svg>
+        </span>
+        {{ s.sale_legend }}
+      </legend>
+      {{ earn_form.idempotency_key }}
+      <label for="{{ earn_form.check_amount.id_for_label }}">{{ earn_form.check_amount.label }}</label>
+      {{ earn_form.check_amount }}
+      <label for="{{ earn_form.phone.id_for_label }}">{{ earn_form.phone.label }}</label>
+      <div class="phone-input-group">
+        <span class="phone-prefix">+998</span>
+        {{ earn_form.phone }}
+      </div>
+      <label>{{ earn_form.no_cashback }} {{ earn_form.no_cashback.label }}</label>
+      <button type="submit">{{ s.record_sale_button }}</button>
+    </fieldset>
+  </form>
 
-<form method="post" action="{% url 'seller_web:redeem' %}">
-  {% csrf_token %}
-  <fieldset class="redeem">
-    <legend>Redeem points</legend>
-    {{ redeem_form.idempotency_key }}
-    <label for="{{ redeem_form.check_amount.id_for_label }}">{{ redeem_form.check_amount.label }}</label>
-    {{ redeem_form.check_amount }}
-    <label for="{{ redeem_form.otp_code.id_for_label }}">{{ redeem_form.otp_code.label }}</label>
-    {{ redeem_form.otp_code }}
-    <label>{{ redeem_form.no_cashback }} {{ redeem_form.no_cashback.label }}</label>
-    <button type="submit">Redeem</button>
-  </fieldset>
-</form>
+  <form method="post" action="{% url 'seller_web:redeem' %}">
+    {% csrf_token %}
+    <fieldset class="redeem">
+      <legend>
+        <span class="legend-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M9.5 9.2c0-1.2 1.1-2 2.5-2s2.5.8 2.5 1.9c0 2.4-3.6 1.6-3.6 3.9M12 17v.01"/></svg>
+        </span>
+        {{ s.redeem_legend }}
+      </legend>
+      {{ redeem_form.idempotency_key }}
+      <label for="{{ redeem_form.check_amount.id_for_label }}">{{ redeem_form.check_amount.label }}</label>
+      {{ redeem_form.check_amount }}
+      <label for="{{ redeem_form.otp_code.id_for_label }}">{{ redeem_form.otp_code.label }}</label>
+      {{ redeem_form.otp_code }}
+      <label>{{ redeem_form.no_cashback }} {{ redeem_form.no_cashback.label }}</label>
+      <button type="submit">{{ s.redeem_button }}</button>
+    </fieldset>
+  </form>
+</div>
+
+<script>
+  (function () {
+    var PREFIX = '+998';
+    var phoneInput = document.getElementById('{{ earn_form.phone.id_for_label }}');
+    if (!phoneInput) return;
+
+    // If a validation error repopulated the field with the full E.164 value,
+    // show only the local part next to the fixed prefix.
+    if (phoneInput.value.indexOf(PREFIX) === 0) {
+      phoneInput.value = phoneInput.value.slice(PREFIX.length);
+    }
+
+    phoneInput.setAttribute('inputmode', 'numeric');
+    phoneInput.setAttribute('autocomplete', 'off');
+    phoneInput.setAttribute('maxlength', '9');
+    phoneInput.setAttribute('placeholder', '901234567');
+    phoneInput.addEventListener('input', function () {
+      phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 9);
+    });
+
+    var form = phoneInput.closest('form');
+    form.addEventListener('submit', function () {
+      phoneInput.value = PREFIX + phoneInput.value.replace(/\D/g, '');
+    });
+  })();
+</script>
 {% endblock %}

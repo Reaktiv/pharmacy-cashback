@@ -2,8 +2,9 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from aiogram.exceptions import TelegramAPIError
 
-from apps.bot.tasks import _notify_transaction_sync, _register_webhook_sync
+from apps.bot.tasks import _notify_transaction_sync, _register_webhook_sync, _rotate_bot_credentials_sync
 from apps.ledger.services import post_earn_transaction
 from apps.tenants.models import Bot
 
@@ -19,9 +20,11 @@ class _FakeAiogramBot:
     """Stands in for aiogram.Bot as an async context manager, recording
     calls instead of hitting the real Telegram API."""
 
-    def __init__(self):
+    def __init__(self, username=None):
         self.sent = []
         self.webhooks_set = []
+        self.webhook_deleted = False
+        self._username = username
 
     async def __aenter__(self):
         return self
@@ -34,6 +37,14 @@ class _FakeAiogramBot:
 
     async def set_webhook(self, url):
         self.webhooks_set.append(url)
+
+    async def delete_webhook(self):
+        self.webhook_deleted = True
+
+    async def get_me(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(username=self._username)
 
 
 @pytest.mark.django_db
@@ -63,7 +74,7 @@ def test_notify_transaction_sends_a_message_to_a_registered_customer(
 
     assert len(fake_bot.sent) == 1
     assert fake_bot.sent[0]["chat_id"] == 4242
-    assert "10000.00 points added" in fake_bot.sent[0]["text"]
+    assert "so'mlik xariddan 10000.00 ball qo'shildi" in fake_bot.sent[0]["text"]
 
 
 @pytest.mark.django_db
@@ -142,3 +153,47 @@ def test_register_webhook_skips_a_bot_with_no_token(make_tenant):
         _register_webhook_sync(bot_row)
 
     mock_build.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_rotate_bot_credentials_deregisters_the_old_webhook_and_refreshes_username(make_tenant):
+    """Reproduces the reported bug: after rotating a bot's token, messaging
+    the OLD bot was still getting answered (because its webhook, registered
+    to the same URL, was never cleared) and the stored username never
+    updated to match the new token's real identity."""
+    tenant = make_tenant("t")
+    bot_row = _make_bot_row(tenant)  # username="@testbot"
+
+    old_bot = _FakeAiogramBot()
+    new_bot = _FakeAiogramBot(username="brand_new_bot")
+
+    with (
+        patch("apps.bot.tasks.build_client_from_token", return_value=old_bot) as mock_from_token,
+        patch("apps.bot.tasks.build_client", return_value=new_bot),
+    ):
+        _rotate_bot_credentials_sync(bot_row.pk, "OLD-TOKEN-VALUE")
+
+    mock_from_token.assert_called_once_with("OLD-TOKEN-VALUE")
+    assert old_bot.webhook_deleted is True
+    bot_row.refresh_from_db()
+    assert bot_row.username == "brand_new_bot"
+
+
+@pytest.mark.django_db
+def test_rotate_bot_credentials_tolerates_an_already_revoked_old_token(make_tenant):
+    tenant = make_tenant("t")
+    bot_row = _make_bot_row(tenant)
+
+    class _RaisingOldBot(_FakeAiogramBot):
+        async def delete_webhook(self):
+            raise TelegramAPIError(method=None, message="Unauthorized")
+
+    new_bot = _FakeAiogramBot(username="testbot")
+    with (
+        patch("apps.bot.tasks.build_client_from_token", return_value=_RaisingOldBot()),
+        patch("apps.bot.tasks.build_client", return_value=new_bot),
+    ):
+        _rotate_bot_credentials_sync(bot_row.pk, "REVOKED-TOKEN")  # must not raise
+
+    bot_row.refresh_from_db()
+    assert bot_row.username == "testbot"

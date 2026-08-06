@@ -1,10 +1,11 @@
 from django.contrib import admin
 
 from apps.ledger.models import Transaction
+from apps.tenants.admin_utils import TenantScopedAdminMixin
 
 
 @admin.register(Transaction)
-class TransactionAdmin(admin.ModelAdmin):
+class TransactionAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
     list_display = (
         "id",
         "tenant",

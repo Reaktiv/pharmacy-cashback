@@ -55,9 +55,12 @@ pharmacy money or breaks the law.
 8. **Minimum check amount to redeem** (configurable per tenant, e.g. 20,000 UZS).
    Below this, points can be earned but not spent — keeps the register fast.
 
-9. **Rounding: always round DOWN to the nearest 1,000 UZS** for both earned and
-   spent points. Uzbekistan has no small change; fractional points cause
-   register disputes.
+9. **Rounding: always round DOWN to the nearest whole so'm (1 UZS)** for both
+   earned and spent points — no fractional tiyin. (Originally this rounded to
+   the nearest 1,000 UZS, but that silently zeroed out any cashback computed
+   from a sub-1% rate — e.g. 0.1% or 0.01% — on all but very large checks.
+   Rounding to whole so'm keeps small rates meaningful while still dropping
+   the fractional change that doesn't circulate.)
 
 10. **All money values use Python `Decimal`, never `float`.** DB columns are
     `DecimalField(max_digits=12, decimal_places=2)`.
@@ -75,7 +78,7 @@ pharmacy money or breaks the law.
 | Role | Scope | Can do |
 |------|-------|--------|
 | **Superadmin** | Global (all tenants) | Create tenants, add/rotate bot tokens, set global rate cap, view cross-tenant stats. Cannot see individual customer PII unless drilling into one tenant. |
-| **Tenant Admin** | One tenant | Manage branches, set cashback rate (within cap), send broadcasts, view own reports, manage managers/sellers. |
+| **Tenant Admin** | One tenant | Manage branches, set cashback rate (within cap), send broadcasts, view own reports, manage branch managers (does NOT add sellers directly — that's the branch manager's job). |
 | **Branch Manager** | One branch | View own branch stats, manage own sellers, see flagged/suspicious activity, issue reversals. |
 | **Seller** | One branch | Only: create earn transactions, confirm redemptions via OTP. No reports, no reversals. |
 | **Customer** | Self | Via Telegram bot only: view balance, get notifications, generate redemption OTP, see promotions. |
@@ -243,29 +246,10 @@ and reuse it.
 ## 7. The three interfaces
 
 ### 7a. Telegram bot (Aiogram 3, multibot mode)
-- ONE Python process serves ALL tenant bots via **multibot / webhook**.
-- Webhook endpoint: `POST /webhook/<webhook_secret>` — resolve tenant from the
-  secret, NOT from the token (token must never appear in a URL or log).
-- Customer flows:
-  - `/start` → branded welcome → **request_contact button ONLY** (no manual
-    phone entry) → consent prompt → register/claim PendingCashback → show balance.
-  - "Balance" → show current points + "usable today" hint.
-  - "Redeem" → ask amount → generate OTP (5 min) → show big code to read to
-    seller.
-  - Auto-notification after every earn/spend: e.g. "✅ 1,500 points added from a
-    50,000 purchase. Balance: 12,500. Wrong amount? [Report]".
-- A SEPARATE bot (or the same seller web app — see 7b) for sellers; customer bot
-  must never expose seller actions.
-- Name auto-filled from Telegram `first_name`, editable later.
+See `backend/apps/bot/CLAUDE.md` for bot flow details.
 
 ### 7b. Seller web page (must be FAST — register use)
-- Minimal single page. Two big inputs: **check amount** and **customer phone**.
-  Enter submits. ~5 seconds total.
-- A "No cashback (prescription only)" checkbox.
-- A "Redeem points" mode: seller enters the OTP the customer reads out.
-- Shows immediate confirmation: earned amount, new balance.
-- Seller is scoped to their branch/tenant automatically from their login.
-- Works on a desktop browser at the till; no phone required.
+See `backend/apps/seller_web/CLAUDE.md` for the register-page spec.
 
 ### 7c. Admin panel — **Django REST API + separate React frontend**
 Backend: Django REST Framework, JWT auth, role-based permissions.
@@ -316,27 +300,6 @@ frequency, above-average check sizes). Leave a `flagged` boolean + a
 - Config via environment variables (django-environ). Never hardcode secrets.
 - Timezone: `Asia/Tashkent`. Currency: UZS, integer-ish (2 dp Decimal, round to
   1000).
-
-### Project layout
-```
-pharmacy-cashback/
-  backend/
-    config/                 # settings, urls, celery, wsgi/asgi
-    apps/
-      tenants/              # Tenant, GlobalSettings, Bot, tenant middleware, TenantManager
-      accounts/             # User roles, Seller, Manager, auth, JWT
-      customers/            # Customer, PendingCashback, OTP
-      ledger/               # Transaction, services.py (ALL cashback math), reports
-      bot/                  # Aiogram multibot, handlers, webhook view, notification tasks
-      broadcasts/           # Broadcast model, sending tasks
-      audit/                # AuditLog
-      seller_web/           # the fast seller register page (server-rendered is fine here)
-    tests/
-  frontend/                 # React admin panel (Vite + TS)
-  docker-compose.yml
-  .env.example
-  README.md
-```
 
 ---
 

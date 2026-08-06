@@ -78,7 +78,11 @@ class Command(BaseCommand):
         superadmin, _ = User.objects.get_or_create(username="demo_superadmin")
         superadmin.set_password(DEMO_PASSWORD)
         superadmin.save()
-        UserProfile.objects.get_or_create(
+        # update_or_create, not get_or_create: creating `superadmin` above
+        # already triggered the post_save signal that gives it a bare
+        # UNASSIGNED profile, so get_or_create would find that row and never
+        # apply the SUPERADMIN role.
+        UserProfile.objects.update_or_create(
             user=superadmin, defaults={"role": UserProfile.Role.SUPERADMIN}
         )
 
@@ -107,8 +111,8 @@ class Command(BaseCommand):
         )
 
         tenant_admin = User.objects.create_user(username="demo_tenantadmin", password=DEMO_PASSWORD)
-        UserProfile.objects.create(
-            user=tenant_admin, role=UserProfile.Role.TENANT_ADMIN, tenant=tenant
+        UserProfile.objects.update_or_create(
+            user=tenant_admin, defaults={"role": UserProfile.Role.TENANT_ADMIN, "tenant": tenant}
         )
 
         branch = Branch.objects.all_tenants().create(
@@ -118,17 +122,19 @@ class Command(BaseCommand):
         branch_manager = User.objects.create_user(
             username="demo_branchmgr", password=DEMO_PASSWORD
         )
-        UserProfile.objects.create(
+        UserProfile.objects.update_or_create(
             user=branch_manager,
-            role=UserProfile.Role.BRANCH_MANAGER,
-            tenant=tenant,
-            branch=branch,
+            defaults={
+                "role": UserProfile.Role.BRANCH_MANAGER,
+                "tenant": tenant,
+                "branch": branch,
+            },
         )
 
+        # No explicit UserProfile.objects.create() for the seller: creating
+        # the Seller row below triggers apps.accounts.signals to flip its
+        # profile to role=SELLER with this tenant/branch automatically.
         seller_user = User.objects.create_user(username="demo_seller", password=DEMO_PASSWORD)
-        UserProfile.objects.create(
-            user=seller_user, role=UserProfile.Role.SELLER, tenant=tenant, branch=branch
-        )
         seller = Seller.objects.all_tenants().create(
             tenant=tenant,
             branch=branch,

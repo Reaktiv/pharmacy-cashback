@@ -2,6 +2,7 @@
 changes, and broadcasts — verified end to end through the real API."""
 
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 
@@ -25,6 +26,80 @@ def test_tenant_creation_is_logged(api_client_for, make_user):
     entry = AuditLog.objects.get(action="tenant_created", target_id=str(response.data["id"]))
     assert entry.actor_id == superadmin.id
     assert entry.metadata["slug"] == "new-co"
+
+
+@pytest.mark.django_db
+def test_tenant_deletion_is_logged(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("gone", rate=Decimal("5.00"))
+    tenant_id = tenant.id
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.delete(f"/api/tenants/{tenant_id}/")
+
+    assert response.status_code == 204
+    entry = AuditLog.objects.get(action="tenant_deleted", target_id=str(tenant_id))
+    assert entry.actor_id == superadmin.id
+    assert entry.metadata["slug"] == "gone"
+    # AuditLog.tenant is SET_NULL, so the entry outlives the cascade delete.
+    assert entry.tenant_id is None
+
+
+@pytest.mark.django_db
+def test_branch_manager_deletion_is_logged(api_client_for, make_user, make_tenant, make_branch):
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    manager = make_user(
+        role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch, username="gonemgr"
+    )
+    profile_id = manager.profile.id
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.delete(f"/api/branch-managers/{profile_id}/")
+
+    assert response.status_code == 204
+    entry = AuditLog.objects.get(action="branch_manager_deleted", target_id=str(profile_id))
+    assert entry.actor_id == admin.id
+    assert entry.tenant_id == tenant.id
+    assert entry.metadata == {"username": "gonemgr", "branch": branch.name}
+
+
+@pytest.mark.django_db
+def test_branch_deletion_is_logged(api_client_for, make_user, make_tenant, make_branch):
+    tenant = make_tenant("t")
+    branch = make_branch(tenant, name="Gone Branch")
+    branch_id = branch.id
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.delete(f"/api/branches/{branch_id}/")
+
+    assert response.status_code == 204
+    entry = AuditLog.objects.get(action="branch_deleted", target_id=str(branch_id))
+    assert entry.actor_id == admin.id
+    assert entry.tenant_id == tenant.id
+    assert entry.metadata == {"name": "Gone Branch", "transactions_deleted": 0}
+
+
+@pytest.mark.django_db
+def test_seller_deletion_is_logged(
+    api_client_for, make_user, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    seller_id = seller.id
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.delete(f"/api/sellers/{seller_id}/")
+
+    assert response.status_code == 204
+    entry = AuditLog.objects.get(action="seller_deleted", target_id=str(seller_id))
+    assert entry.actor_id == manager.id
+    assert entry.tenant_id == tenant.id
+    assert entry.metadata == {"full_name": seller.full_name, "branch": branch.name}
 
 
 @pytest.mark.django_db
@@ -57,20 +132,22 @@ def test_bot_creation_and_token_rotation_are_logged_without_the_token(
     superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
     client = api_client_for(superadmin)
 
-    create_response = client.post(
-        "/api/bots/",
-        {"tenant": tenant.id, "username": "@bot", "token": "123456:SECRET-TOKEN-VALUE"},
-        format="json",
-    )
+    with patch("apps.tenants.serializers.validate_bot_token", return_value="bot"):
+        create_response = client.post(
+            "/api/bots/",
+            {"tenant": tenant.id, "username": "@bot", "token": "123456:SECRET-TOKEN-VALUE"},
+            format="json",
+        )
     bot_id = create_response.data["id"]
 
     created_entry = AuditLog.objects.get(action="bot_created", target_id=str(bot_id))
     assert "SECRET-TOKEN-VALUE" not in str(created_entry.metadata)
     assert "SECRET-TOKEN-VALUE" not in created_entry.action
 
-    rotate_response = client.patch(
-        f"/api/bots/{bot_id}/", {"token": "999999:ROTATED-SECRET"}, format="json"
-    )
+    with patch("apps.tenants.serializers.validate_bot_token", return_value="bot"):
+        rotate_response = client.patch(
+            f"/api/bots/{bot_id}/", {"token": "999999:ROTATED-SECRET"}, format="json"
+        )
     assert rotate_response.status_code == 200
 
     rotated_entry = AuditLog.objects.get(action="bot_token_rotated", target_id=str(bot_id))
@@ -84,11 +161,12 @@ def test_bot_update_without_token_does_not_log_a_rotation(
     tenant = make_tenant("t")
     superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
     client = api_client_for(superadmin)
-    bot_id = client.post(
-        "/api/bots/",
-        {"tenant": tenant.id, "username": "@bot", "token": "123456:SECRET"},
-        format="json",
-    ).data["id"]
+    with patch("apps.tenants.serializers.validate_bot_token", return_value="bot"):
+        bot_id = client.post(
+            "/api/bots/",
+            {"tenant": tenant.id, "username": "@bot", "token": "123456:SECRET"},
+            format="json",
+        ).data["id"]
 
     client.patch(f"/api/bots/{bot_id}/", {"is_active": False}, format="json")
 

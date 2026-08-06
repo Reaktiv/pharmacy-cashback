@@ -46,7 +46,7 @@ def test_balance_is_always_exactly_the_hand_computed_ledger_sum(
     assert get_balance(customer) == Decimal("30000.00")
 
     # 3) spend 15000 of it on a 50000 check (also earns 10% of the 35000 cash
-    # paid = 3500, which itself rounds down to 3000)
+    # paid = 3500 exactly, no rounding needed since it's already a whole som)
     txn3 = post_earn_transaction(
         tenant=tenant,
         branch=branch,
@@ -56,14 +56,14 @@ def test_balance_is_always_exactly_the_hand_computed_ledger_sum(
         cashback_spent=Decimal("15000"),
         idempotency_key="txn-3",
     )
-    assert txn3.cashback_earned == Decimal("3000.00")  # round_down_1000(10% of cash_paid=35000)
-    # running total: 30000 - 15000 + 3000 = 18000
-    assert get_balance(customer) == Decimal("18000.00")
+    assert txn3.cashback_earned == Decimal("3500.00")  # round_down_som(10% of cash_paid=35000)
+    # running total: 30000 - 15000 + 3500 = 18500
+    assert get_balance(customer) == Decimal("18500.00")
 
     # 4) reverse transaction #3
     post_reversal(original_txn=txn3, actor=manager)
-    # reversing txn3 undoes its net (+3000 - 15000 = -12000) contribution:
-    # 18000 - (-12000) = 30000
+    # reversing txn3 undoes its net (+3500 - 15000 = -11500) contribution:
+    # 18500 - (-11500) = 30000
     assert get_balance(customer) == Decimal("30000.00")
 
 

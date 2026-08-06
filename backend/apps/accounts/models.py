@@ -16,6 +16,7 @@ class UserProfile(models.Model):
     """
 
     class Role(models.TextChoices):
+        UNASSIGNED = "unassigned", "Unassigned"
         SUPERADMIN = "superadmin", "Superadmin"
         TENANT_ADMIN = "tenant_admin", "Tenant Admin"
         BRANCH_MANAGER = "branch_manager", "Branch Manager"
@@ -24,7 +25,7 @@ class UserProfile(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
     )
-    role = models.CharField(max_length=20, choices=Role.choices)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.UNASSIGNED)
     tenant = models.ForeignKey(
         Tenant, null=True, blank=True, on_delete=models.CASCADE, related_name="user_profiles"
     )
@@ -38,10 +39,10 @@ class UserProfile(models.Model):
 
     def clean(self):
         super().clean()
-        if self.role == self.Role.SUPERADMIN:
+        if self.role in (self.Role.SUPERADMIN, self.Role.UNASSIGNED):
             if self.tenant_id or self.branch_id:
                 raise ValidationError(
-                    "A superadmin profile must not be scoped to a tenant or branch."
+                    "A superadmin/unassigned profile must not be scoped to a tenant or branch."
                 )
         elif self.role == self.Role.TENANT_ADMIN:
             if not self.tenant_id:
@@ -57,6 +58,18 @@ class UserProfile(models.Model):
                 )
             if self.branch.tenant_id != self.tenant_id:
                 raise ValidationError({"branch": "Branch must belong to the same tenant."})
+            if self.role == self.Role.SELLER and not hasattr(self.user, "seller_profile"):
+                # Seller carries the branch/phone/full_name a seller role
+                # actually needs, which this profile alone can't supply — so
+                # provisioning always flows Seller -> profile (see
+                # apps.accounts.signals.sync_profile_with_seller), never the
+                # other way. Block the role flip until that row exists so a
+                # profile can never claim to be a seller it isn't.
+                raise ValidationError(
+                    "A seller profile requires a linked Seller record — create the "
+                    "Seller (branch, phone, full name) via the Sellers admin first; "
+                    "it sets this role automatically."
+                )
 
     def __str__(self):
         return f"{self.user.username} ({self.role})"
@@ -93,9 +106,16 @@ class Seller(TenantScopedModel):
         super().clean()
         if self.branch_id and self.tenant_id and self.branch.tenant_id != self.tenant_id:
             raise ValidationError({"branch": "Branch must belong to the same tenant."})
+        # Only enforce this once the profile is already a seller elsewhere
+        # scoped: a brand-new Seller for a still-UNASSIGNED user is the
+        # normal provisioning path (apps.accounts.signals.sync_profile_with_seller
+        # sets the profile's role/tenant/branch to match right after this
+        # save), so it must not be blocked here.
         profile = getattr(self.user, "profile", None)
-        if profile is not None and (
-            profile.tenant_id != self.tenant_id or profile.branch_id != self.branch_id
+        if (
+            profile is not None
+            and profile.role == UserProfile.Role.SELLER
+            and (profile.tenant_id != self.tenant_id or profile.branch_id != self.branch_id)
         ):
             raise ValidationError(
                 "Seller.tenant/branch must match the linked user's UserProfile."

@@ -49,13 +49,13 @@ def test_seller_me_endpoint_reflects_own_scope_only(make_user, make_tenant, make
 
 
 @pytest.mark.django_db
-def test_user_without_a_profile_gets_null_scope_from_me_endpoint(make_user):
-    plain_user = make_user()  # no role/profile at all
+def test_unassigned_user_gets_null_scope_from_me_endpoint(make_user):
+    plain_user = make_user()  # auto-provisioned UNASSIGNED profile, no role assigned yet
 
     client = APIClient()
     client.force_authenticate(user=plain_user)
     response = client.get("/api/auth/me/")
 
     assert response.status_code == 200
-    assert response.data["role"] is None
+    assert response.data["role"] == UserProfile.Role.UNASSIGNED
     assert response.data["tenant_id"] is None

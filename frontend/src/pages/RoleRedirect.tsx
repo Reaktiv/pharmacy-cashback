@@ -1,5 +1,8 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import EmptyState from '../components/EmptyState'
+import { IconCrossShield } from '../components/Icons'
+import { useLanguage } from '../lib/i18n'
 
 const LANDING_BY_ROLE: Record<string, string> = {
   superadmin: '/dashboard',
@@ -13,15 +16,19 @@ const LANDING_BY_ROLE: Record<string, string> = {
  * flow must never expose seller actions here). */
 export default function RoleRedirect() {
   const { user } = useAuth()
+  const { t } = useLanguage()
   if (!user?.role || !(user.role in LANDING_BY_ROLE)) {
     return (
-      <div className="card">
-        <h2>No panel for this role</h2>
-        <p>
-          {user?.role === 'seller'
-            ? 'Sellers use the register page at /seller/, not this admin panel.'
-            : 'Your account has no role assigned. Contact a superadmin.'}
-        </p>
+      <div className="panel">
+        <EmptyState
+          icon={<IconCrossShield />}
+          title={t('role_redirect_no_panel_title')}
+          subtitle={
+            user?.role === 'seller'
+              ? t('role_redirect_seller_subtitle')
+              : t('role_redirect_no_role_subtitle')
+          }
+        />
       </div>
     )
   }
