@@ -27,6 +27,14 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 # Django's CSRF check rejects browser POSTs (login, seller-web forms).
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
+# In production, nginx terminates TLS and proxies plain HTTP to this app —
+# without this, Django thinks every request is insecure (wrong scheme in
+# generated URLs, and secure-only cookies below would never be set).
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
 # FERNET_KEY encrypts Bot.token_encrypted (CLAUDE.md §5). Never log or commit it.
 FERNET_KEY = env("FERNET_KEY")
 

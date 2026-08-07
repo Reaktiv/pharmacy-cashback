@@ -13,16 +13,39 @@ build order. Both are the source of truth for this project.
 
 ## Setup
 
+Create a `.env` file at the repo root (never commit it — see
+`.gitignore`) with at least:
+
 ```bash
-cp .env.example .env
-# edit .env: generate a real SECRET_KEY and FERNET_KEY, see comments in the file
+DJANGO_SETTINGS_MODULE=config.settings
+SECRET_KEY=              # generate below
+DEBUG=True
+ALLOWED_HOSTS=localhost,127.0.0.1,web
+
+FERNET_KEY=               # generate below
+
+DATABASE_URL=postgres://pharmacy:pharmacy@localhost:5433/pharmacy_cashback
+POSTGRES_DB=pharmacy_cashback
+POSTGRES_USER=pharmacy
+POSTGRES_PASSWORD=pharmacy
+
+REDIS_URL=redis://localhost:6380/0
+
+# Public HTTPS base URL Telegram sends webhooks to (CLAUDE.md §7a) — a
+# tunnel URL (e.g. ngrok) for local dev, your real domain in production.
+PUBLIC_BASE_URL=https://example.com
 ```
 
-Generate a Fernet key:
+Generate `SECRET_KEY` and `FERNET_KEY`:
 
 ```bash
+python -c "import secrets; print(secrets.token_urlsafe(50))"
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+See [Environment variables](#environment-variables) below for the full list,
+including the extra ones needed once you put this behind a tunnel or in
+production (`CSRF_TRUSTED_ORIGINS`).
 
 ## Running with Docker Compose (primary workflow)
 
@@ -82,7 +105,7 @@ host):
 
 ```bash
 docker compose up -d db redis
-.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/pip install -r requirements.txt
 .venv/bin/python backend/manage.py migrate
 .venv/bin/python backend/manage.py runserver
 ```
@@ -112,6 +135,14 @@ npm run dev
 Defaults to proxying `/api` to `http://localhost:8001` (matching the
 Docker-exposed backend port) — see `VITE_API_PROXY_TARGET` in
 `vite.config.ts` if you're running the backend somewhere else.
+
+## Production deployment
+
+`docker-compose.yml` is dev-only (Django's `runserver`, Vite's dev server —
+neither is meant to face the internet). For a real server behind a domain
+with HTTPS, use `docker-compose.prod.yml` (gunicorn+uvicorn, a built
+frontend served by nginx, Let's Encrypt via certbot). See
+[`DEPLOY.md`](./DEPLOY.md) for the full step-by-step.
 
 ## Adding a tenant + bot
 
@@ -167,13 +198,28 @@ pharmacy-cashback/
       seller_web/               # the fast seller register page
     tests/
   frontend/                 # React admin panel (Vite + TS)
-  docker-compose.yml
-  .env.example
+  docker-compose.yml        # dev stack (runserver, vite dev server)
+  docker-compose.prod.yml   # production stack (gunicorn+uvicorn, built
+                             # frontend behind nginx+TLS) — see DEPLOY.md
   README.md
 ```
 
 ## Environment variables
 
-See `.env.example` for the full list with descriptions (`SECRET_KEY`,
-`FERNET_KEY`, `DATABASE_URL`, `REDIS_URL`, `PUBLIC_BASE_URL`, `ALLOWED_HOSTS`,
-etc.). Never commit a real `.env`.
+All read via `django-environ` from a `.env` file at the repo root (never
+commit it — see `.gitignore`). See [Setup](#setup) above for the required
+set and how to generate secrets.
+
+| Variable | Purpose |
+|---|---|
+| `SECRET_KEY` | Django's cryptographic signing key. |
+| `DEBUG` | `True` for local dev, `False` in production. |
+| `ALLOWED_HOSTS` | Comma-separated hostnames Django will serve. |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated `https://...` origins, needed once you're behind a tunnel (ngrok/jprq) or a real domain — otherwise browser POSTs (login, seller-web) get a 403. |
+| `FERNET_KEY` | Encrypts `Bot.token_encrypted` (CLAUDE.md §5). |
+| `DATABASE_URL` | Postgres connection string. |
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | Used by the `db` container and folded into `DATABASE_URL` for the app containers. |
+| `REDIS_URL` | Celery broker/result backend. |
+| `PUBLIC_BASE_URL` | Public HTTPS base URL Telegram sends webhooks to (CLAUDE.md §7a). |
+
+Production-only (see `DEPLOY.md`): `DOMAIN`, `CERTBOT_EMAIL`.

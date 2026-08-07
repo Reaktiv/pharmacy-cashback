@@ -5,6 +5,7 @@ aiohttp==3.10.11
 aiosignal==1.4.0
 amqp==5.3.1
 annotated-types==0.8.0
+anyio==4.14.2
 asgiref==3.12.1
 attrs==26.1.0
 billiard==4.2.4
@@ -25,6 +26,9 @@ djangorestframework==3.15.2
 djangorestframework-simplejwt==5.3.1
 djangorestframework-stubs==3.17.1
 frozenlist==1.8.0
+gunicorn==26.0.0
+h11==0.16.0
+httptools==0.8.0
 idna==3.18
 iniconfig==2.3.0
 kombu==5.6.2
@@ -45,6 +49,8 @@ PyJWT==2.13.0
 pytest==8.2.2
 pytest-django==4.8.0
 python-dateutil==2.9.0.post0
+python-dotenv==1.2.2
+PyYAML==6.0.3
 redis==5.0.8
 ruff==0.5.7
 six==1.17.0
@@ -52,6 +58,10 @@ sqlparse==0.5.5
 types-PyYAML==6.0.12.20260724
 typing_extensions==4.16.0
 tzdata==2026.3
+uvicorn==0.52.1
+uvloop==0.22.1
 vine==5.1.0
+watchfiles==1.2.0
 wcwidth==0.8.2
+websockets==17.0.1
 yarl==1.24.5
