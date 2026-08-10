@@ -384,3 +384,114 @@ def test_tenant_admin_cannot_update_global_settings(api_client_for, make_user, m
     response = client.get("/api/global-settings/")
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_superadmin_can_set_broadcast_quota(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("a")
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"broadcast_quota": 10}, format="json"
+    )
+
+    assert response.status_code == 200, response.data
+    tenant.refresh_from_db()
+    assert tenant.broadcast_quota == 10
+
+
+@pytest.mark.django_db
+def test_tenant_admin_cannot_change_broadcast_quota(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("a")
+    tenant.broadcast_quota = 5
+    tenant.save()
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"broadcast_quota": 999}, format="json"
+    )
+
+    assert response.status_code == 400
+    tenant.refresh_from_db()
+    assert tenant.broadcast_quota == 5
+
+
+@pytest.mark.django_db
+def test_broadcast_quota_changed_audit_log_written_on_change(
+    api_client_for, make_user, make_tenant
+):
+    from apps.audit.models import AuditLog
+
+    tenant = make_tenant("a")
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"broadcast_quota": 7}, format="json"
+    )
+
+    assert response.status_code == 200, response.data
+    assert AuditLog.objects.filter(
+        action="broadcast_quota_changed", target_type="Tenant", target_id=tenant.id
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_broadcast_quota_changed_audit_log_not_written_when_unchanged(
+    api_client_for, make_user, make_tenant
+):
+    from apps.audit.models import AuditLog
+
+    tenant = make_tenant("a")
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.patch(f"/api/tenants/{tenant.id}/", {"name": "Renamed"}, format="json")
+
+    assert response.status_code == 200, response.data
+    assert not AuditLog.objects.filter(
+        action="broadcast_quota_changed", target_type="Tenant", target_id=tenant.id
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_broadcasts_sent_this_month_counts_only_this_tenants_sent_legs(
+    api_client_for, make_user, make_tenant
+):
+    from apps.broadcasts.models import Broadcast, PlatformBroadcast
+
+    tenant = make_tenant("a")
+    other_tenant = make_tenant("b")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+
+    # Counts: a sent broadcast for this tenant.
+    Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="A", body="a", created_by=admin, status=Broadcast.Status.SENT
+    )
+    # Does not count: still a draft.
+    Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="B", body="b", created_by=admin, status=Broadcast.Status.DRAFT
+    )
+    # Does not count: belongs to another tenant.
+    Broadcast.objects.all_tenants().create(
+        tenant=other_tenant, title="C", body="c", created_by=admin, status=Broadcast.Status.SENT
+    )
+    # Does not count: a platform-broadcast leg (superadmin-originated).
+    platform_broadcast = PlatformBroadcast.objects.create(title="P", body="p", created_by=superadmin)
+    Broadcast.objects.all_tenants().create(
+        tenant=tenant,
+        title="D",
+        body="d",
+        created_by=superadmin,
+        status=Broadcast.Status.SENT,
+        platform_broadcast=platform_broadcast,
+    )
+
+    client = api_client_for(admin)
+    response = client.get(f"/api/tenants/{tenant.id}/")
+
+    assert response.status_code == 200
+    assert response.data["broadcasts_sent_this_month"] == 1

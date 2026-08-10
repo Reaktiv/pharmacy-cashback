@@ -210,3 +210,108 @@ def test_only_draft_broadcasts_can_be_edited(api_client_for, make_user, make_ten
     response = client.patch(f"/api/broadcasts/{broadcast.pk}/", {"title": "New"}, format="json")
 
     assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_broadcast_quota_none_never_blocks_sending(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")  # broadcast_quota defaults to None (unlimited)
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    for i in range(5):
+        Broadcast.objects.all_tenants().create(
+            tenant=tenant,
+            title=f"Old {i}",
+            body="b",
+            created_by=admin,
+            status=Broadcast.Status.SENT,
+        )
+    broadcast = Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="New", body="body", created_by=admin
+    )
+    client = api_client_for(admin)
+
+    with patch("apps.broadcasts.api_views.send_broadcast") as mock_task:
+        response = client.post(f"/api/broadcasts/{broadcast.pk}/send/")
+
+    assert response.status_code == 200
+    mock_task.delay.assert_called_once_with(broadcast.pk)
+
+
+@pytest.mark.django_db
+def test_sending_a_broadcast_under_quota_succeeds(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    tenant.broadcast_quota = 2
+    tenant.save()
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="Old", body="b", created_by=admin, status=Broadcast.Status.SENT
+    )
+    broadcast = Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="New", body="body", created_by=admin
+    )
+    client = api_client_for(admin)
+
+    with patch("apps.broadcasts.api_views.send_broadcast") as mock_task:
+        response = client.post(f"/api/broadcasts/{broadcast.pk}/send/")
+
+    assert response.status_code == 200
+    mock_task.delay.assert_called_once_with(broadcast.pk)
+
+
+@pytest.mark.django_db
+def test_sending_a_broadcast_at_quota_is_rejected(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    tenant.broadcast_quota = 2
+    tenant.save()
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    for i in range(2):
+        Broadcast.objects.all_tenants().create(
+            tenant=tenant,
+            title=f"Old {i}",
+            body="b",
+            created_by=admin,
+            status=Broadcast.Status.SENT,
+        )
+    broadcast = Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="New", body="body", created_by=admin
+    )
+    client = api_client_for(admin)
+
+    with patch("apps.broadcasts.api_views.send_broadcast") as mock_task:
+        response = client.post(f"/api/broadcasts/{broadcast.pk}/send/")
+
+    assert response.status_code == 400
+    mock_task.delay.assert_not_called()
+    broadcast.refresh_from_db()
+    assert broadcast.status == Broadcast.Status.DRAFT
+
+
+@pytest.mark.django_db
+def test_platform_originated_broadcast_leg_cannot_be_manually_sent_by_tenant_admin(
+    api_client_for, make_user, make_tenant
+):
+    """Regression test for the fan-out double-send race: a platform-originated
+    leg is created directly in SENDING status (never DRAFT), so a tenant_admin
+    clicking Send on it must hit the existing "only a draft" guard."""
+    from apps.broadcasts.models import PlatformBroadcast
+
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    platform_broadcast = PlatformBroadcast.objects.create(
+        title="Platform", body="body", created_by=superadmin
+    )
+    leg = Broadcast.objects.all_tenants().create(
+        tenant=tenant,
+        title="Platform",
+        body="body",
+        created_by=superadmin,
+        platform_broadcast=platform_broadcast,
+        status=Broadcast.Status.SENDING,
+    )
+    client = api_client_for(admin)
+
+    with patch("apps.broadcasts.api_views.send_broadcast") as mock_task:
+        response = client.post(f"/api/broadcasts/{leg.pk}/send/")
+
+    assert response.status_code == 400
+    mock_task.delay.assert_not_called()

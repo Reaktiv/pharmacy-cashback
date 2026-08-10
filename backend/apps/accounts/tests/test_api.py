@@ -394,3 +394,73 @@ def test_tenant_admin_cannot_delete_a_seller(
 
     assert response.status_code == 403
     assert Seller.objects.all_tenants().filter(pk=seller.id).exists()
+
+
+@pytest.mark.django_db
+def test_superadmin_can_create_a_tenant_admin_with_login(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.post(
+        "/api/tenant-admins/",
+        {"tenant": tenant.id, "username": "newadmin", "password": "somepass123"},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    profile = UserProfile.objects.get(pk=response.data["id"])
+    assert profile.tenant_id == tenant.id
+    assert profile.branch_id is None
+    assert profile.role == UserProfile.Role.TENANT_ADMIN
+    assert profile.user.username == "newadmin"
+    assert profile.user.check_password("somepass123")
+
+
+@pytest.mark.django_db
+def test_tenant_admin_cannot_create_a_tenant_admin(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.post(
+        "/api/tenant-admins/",
+        {"tenant": tenant.id, "username": "newadmin", "password": "somepass123"},
+        format="json",
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_tenant_admins_list_can_be_filtered_by_tenant(api_client_for, make_user, make_tenant):
+    tenant_a = make_tenant("a")
+    tenant_b = make_tenant("b")
+    make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant_a)
+    make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant_b)
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.get(f"/api/tenant-admins/?tenant={tenant_a.id}")
+
+    assert response.status_code == 200
+    rows = response.data["results"] if isinstance(response.data, dict) else response.data
+    assert len(rows) == 1
+    assert rows[0]["tenant"] == tenant_a.id
+
+
+@pytest.mark.django_db
+def test_superadmin_can_delete_a_tenant_admin_and_the_login_is_gone(
+    api_client_for, make_user, make_tenant
+):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    admin_user_id = admin.id
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.delete(f"/api/tenant-admins/{admin.profile.id}/")
+
+    assert response.status_code == 204
+    assert not User.objects.filter(pk=admin_user_id).exists()
+    assert not UserProfile.objects.filter(user_id=admin_user_id).exists()

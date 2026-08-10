@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiFetch, apiFetchObjectUrl, ApiError } from '../api/client'
-import type { Broadcast, BroadcastMedia } from '../api/types'
+import type { PlatformBroadcast, PlatformBroadcastMedia } from '../api/types'
 import { broadcastStatusLabel } from '../lib/labels'
 import { useLanguage } from '../lib/i18n'
 import { plainTextLength, renderBroadcastMessageHtml, sanitizeRichTextHtml } from '../lib/richText'
@@ -24,16 +24,7 @@ function asArray<T>(data: T[] | { results: T[] }): T[] {
   return Array.isArray(data) ? data : data.results
 }
 
-/** BroadcastViewSet.send() returns {detail: "..."} for both the existing
- * "only a draft can be sent" guard and the new monthly quota check — surface
- * that message directly instead of a raw JSON blob. */
-function extractDetailError(err: unknown): string | null {
-  if (!(err instanceof ApiError) || typeof err.data !== 'object' || err.data === null) return null
-  const value = (err.data as Record<string, unknown>).detail
-  return typeof value === 'string' ? value : null
-}
-
-function BroadcastMediaThumb({ media }: { media: BroadcastMedia }) {
+function PlatformBroadcastMediaThumb({ media }: { media: PlatformBroadcastMedia }) {
   const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -63,9 +54,18 @@ function BroadcastMediaThumb({ media }: { media: BroadcastMedia }) {
   )
 }
 
-export default function BroadcastsPage() {
+/** Superadmin's platform-wide broadcast composer — same shape/limits as
+ * BroadcastsPage.tsx, but posts to /api/platform-broadcasts/ (fanned out
+ * server-side to every active tenant's customers via
+ * apps.broadcasts.tasks.send_platform_broadcast) rather than a single
+ * tenant's own /api/broadcasts/. Kept as a separate page rather than
+ * parameterizing BroadcastsPage — the two composer shells are similar but
+ * the list columns/semantics (aggregated sent/failed/tenant_count vs a
+ * single tenant's own counts) differ enough that a shared abstraction
+ * across this 2-usage case isn't worth it yet. */
+export default function SuperadminBroadcastsPage() {
   const { t, language } = useLanguage()
-  const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null)
+  const [broadcasts, setBroadcasts] = useState<PlatformBroadcast[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [sendingId, setSendingId] = useState<number | null>(null)
 
@@ -77,9 +77,9 @@ export default function BroadcastsPage() {
   const [submitting, setSubmitting] = useState<'draft' | 'send' | null>(null)
 
   const load = () => {
-    apiFetch<Broadcast[] | { results: Broadcast[] }>('/api/broadcasts/').then((data) =>
-      setBroadcasts(asArray(data))
-    )
+    apiFetch<PlatformBroadcast[] | { results: PlatformBroadcast[] }>(
+      '/api/platform-broadcasts/'
+    ).then((data) => setBroadcasts(asArray(data)))
   }
 
   useEffect(load, [])
@@ -115,7 +115,7 @@ export default function BroadcastsPage() {
 
     setSubmitting(action)
     try {
-      const created = await apiFetch<Broadcast>('/api/broadcasts/', {
+      const created = await apiFetch<PlatformBroadcast>('/api/platform-broadcasts/', {
         method: 'POST',
         body: JSON.stringify({
           title,
@@ -124,15 +124,12 @@ export default function BroadcastsPage() {
         }),
       })
       if (action === 'send') {
-        await apiFetch(`/api/broadcasts/${created.id}/send/`, { method: 'POST' })
+        await apiFetch(`/api/platform-broadcasts/${created.id}/send/`, { method: 'POST' })
       }
       resetComposer()
       load()
     } catch (err) {
-      setFormError(
-        extractDetailError(err) ??
-          (err instanceof ApiError ? JSON.stringify(err.data) : t('broadcast_create_error')),
-      )
+      setFormError(err instanceof ApiError ? JSON.stringify(err.data) : t('broadcast_create_error'))
     } finally {
       setSubmitting(null)
     }
@@ -142,13 +139,10 @@ export default function BroadcastsPage() {
     setSendingId(id)
     setError(null)
     try {
-      await apiFetch(`/api/broadcasts/${id}/send/`, { method: 'POST' })
+      await apiFetch(`/api/platform-broadcasts/${id}/send/`, { method: 'POST' })
       load()
     } catch (err) {
-      setError(
-        extractDetailError(err) ??
-          (err instanceof ApiError ? JSON.stringify(err.data) : t('broadcast_send_error')),
-      )
+      setError(err instanceof ApiError ? JSON.stringify(err.data) : t('broadcast_send_error'))
     } finally {
       setSendingId(null)
     }
@@ -166,7 +160,8 @@ export default function BroadcastsPage() {
       )}
 
       <div className="section-head" style={{ marginTop: 0 }}>
-        <h2>{t('broadcasts_heading')}</h2>
+        <h2>{t('platform_broadcasts_heading')}</h2>
+        <p>{t('platform_broadcasts_description')}</p>
       </div>
       <div className="table-card">
         {broadcasts.length === 0 ? (
@@ -183,6 +178,7 @@ export default function BroadcastsPage() {
                   <th>{t('th_title')}</th>
                   <th>{t('th_media')}</th>
                   <th>{t('status_label')}</th>
+                  <th>{t('th_tenants')}</th>
                   <th>{t('th_sent')}</th>
                   <th>{t('th_failed')}</th>
                   <th></th>
@@ -195,7 +191,7 @@ export default function BroadcastsPage() {
                     <td>
                       {b.media ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <BroadcastMediaThumb media={b.media} />
+                          <PlatformBroadcastMediaThumb media={b.media} />
                           <span className="pill">
                             {b.media.media_type === 'image' ? <IconImagePicture /> : <IconVideoCamera />}
                             {b.media.media_type === 'image' ? t('media_type_image') : t('media_type_video')}
@@ -208,6 +204,7 @@ export default function BroadcastsPage() {
                     <td>
                       <span className={`pill ${b.status}`}>{broadcastStatusLabel(language, b.status)}</span>
                     </td>
+                    <td className="num">{b.tenant_count}</td>
                     <td className="num">{b.sent_count}</td>
                     <td className="num">{b.failed_count}</td>
                     <td>
@@ -233,7 +230,7 @@ export default function BroadcastsPage() {
       <div className="section-head">
         <div>
           <h2>{t('broadcast_new_heading')}</h2>
-          <p>{t('broadcast_new_description')}</p>
+          <p>{t('platform_broadcast_new_description')}</p>
         </div>
       </div>
       <div className="panel">
@@ -246,9 +243,9 @@ export default function BroadcastsPage() {
         <div className="broadcast-composer">
           <div>
             <div className="field wide">
-              <label htmlFor="broadcast-title">{t('th_title')}</label>
+              <label htmlFor="platform-broadcast-title">{t('th_title')}</label>
               <input
-                id="broadcast-title"
+                id="platform-broadcast-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={t('broadcast_title_placeholder')}
@@ -270,7 +267,12 @@ export default function BroadcastsPage() {
             </div>
             <div className="field wide">
               <label>{t('field_media_optional')}</label>
-              <MediaAttach key={`media-${composerKey}`} value={media} onChange={setMedia} />
+              <MediaAttach
+                key={`media-${composerKey}`}
+                value={media}
+                onChange={setMedia}
+                uploadEndpoint="/api/platform-broadcast-media/"
+              />
             </div>
 
             <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem' }}>
@@ -288,7 +290,7 @@ export default function BroadcastsPage() {
                 onClick={() => handleSubmit('send')}
               >
                 <IconSend />
-                {submitting === 'send' ? t('broadcast_sending') : t('broadcast_send_now_button')}
+                {submitting === 'send' ? t('broadcast_sending') : t('platform_broadcast_send_now_button')}
               </button>
             </div>
           </div>

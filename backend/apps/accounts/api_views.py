@@ -1,8 +1,13 @@
 from rest_framework import viewsets
 
 from apps.accounts.models import Branch, Seller, UserProfile
-from apps.accounts.permissions import IsBranchManager, IsTenantAdmin
-from apps.accounts.serializers import BranchManagerSerializer, BranchSerializer, SellerSerializer
+from apps.accounts.permissions import IsBranchManager, IsSuperadmin, IsTenantAdmin
+from apps.accounts.serializers import (
+    BranchManagerSerializer,
+    BranchSerializer,
+    SellerSerializer,
+    TenantAdminSerializer,
+)
 from apps.audit.services import log_action
 
 
@@ -86,6 +91,50 @@ class BranchManagerViewSet(viewsets.ModelViewSet):
             target_type="UserProfile",
             target_id=instance.id,
             metadata={"username": instance.user.username, "branch": instance.branch.name},
+        )
+        # Deleting just the profile would strand a live login with no role.
+        # UserProfile.user is CASCADE, so removing the User cleans up both.
+        instance.user.delete()
+
+
+class TenantAdminViewSet(viewsets.ModelViewSet):
+    """CLAUDE.md §3/§7c: the superadmin creates tenants and is also the only
+    role able to provision the tenant admin login that then manages one.
+    Cross-tenant by nature (unlike BranchManagerViewSet, which a tenant
+    admin only ever sees within their own tenant), so it's superadmin-only
+    and scopable by `?tenant=<id>` for the tenant detail page."""
+
+    serializer_class = TenantAdminSerializer
+    permission_classes = [IsSuperadmin]
+
+    def get_queryset(self):
+        qs = UserProfile.objects.filter(role=UserProfile.Role.TENANT_ADMIN).select_related(
+            "user", "tenant"
+        )
+        tenant_id = self.request.query_params.get("tenant")
+        if tenant_id:
+            qs = qs.filter(tenant_id=tenant_id)
+        return qs.order_by("tenant__name", "user__username")
+
+    def perform_create(self, serializer):
+        profile = serializer.save()
+        log_action(
+            tenant=profile.tenant,
+            actor=self.request.user,
+            action="tenant_admin_created",
+            target_type="UserProfile",
+            target_id=profile.id,
+            metadata={"username": profile.user.username, "tenant": profile.tenant.name},
+        )
+
+    def perform_destroy(self, instance):
+        log_action(
+            tenant=instance.tenant,
+            actor=self.request.user,
+            action="tenant_admin_deleted",
+            target_type="UserProfile",
+            target_id=instance.id,
+            metadata={"username": instance.user.username, "tenant": instance.tenant.name},
         )
         # Deleting just the profile would strand a live login with no role.
         # UserProfile.user is CASCADE, so removing the User cleans up both.

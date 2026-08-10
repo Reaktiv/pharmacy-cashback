@@ -9,7 +9,10 @@ import { IconGrid, IconBuilding, IconUsers, IconMegaphone, IconChartBar, IconLog
 import type { ReactNode } from 'react'
 
 const NAV_BY_ROLE: Record<string, { to: string; labelKey: StringKey; icon: ReactNode }[]> = {
-  superadmin: [{ to: '/dashboard', labelKey: 'nav_dashboard', icon: <IconGrid /> }],
+  superadmin: [
+    { to: '/dashboard', labelKey: 'nav_dashboard', icon: <IconGrid /> },
+    { to: '/platform-broadcasts', labelKey: 'nav_platform_broadcasts', icon: <IconMegaphone /> },
+  ],
   tenant_admin: [
     { to: '/tenant', labelKey: 'nav_tenant', icon: <IconBuilding /> },
     { to: '/sellers', labelKey: 'nav_sellers', icon: <IconUsers /> },
@@ -25,6 +28,7 @@ const NAV_BY_ROLE: Record<string, { to: string; labelKey: StringKey; icon: React
 const PAGE_TITLES: { test: (path: string) => boolean; titleKey: StringKey }[] = [
   { test: (p) => p === '/dashboard', titleKey: 'page_title_dashboard' },
   { test: (p) => p.startsWith('/tenants/'), titleKey: 'page_title_tenant_detail' },
+  { test: (p) => p === '/platform-broadcasts', titleKey: 'page_title_platform_broadcasts' },
   { test: (p) => p === '/tenant', titleKey: 'page_title_tenant' },
   { test: (p) => p === '/sellers', titleKey: 'page_title_sellers' },
   { test: (p) => p === '/broadcasts', titleKey: 'page_title_broadcasts' },

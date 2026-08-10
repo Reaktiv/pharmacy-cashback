@@ -37,6 +37,76 @@ class BroadcastMedia(TenantScopedModel):
         return self.original_filename
 
 
+def platform_broadcast_media_upload_path(instance: "PlatformBroadcastMedia", filename: str) -> str:
+    """Not tenant-scoped — this media is authored once by a superadmin before
+    any tenant is chosen, then copied per-tenant into a real (tenant-scoped)
+    BroadcastMedia row at fan-out time (see apps.broadcasts.tasks.
+    send_platform_broadcast). This row itself is never sent to Telegram."""
+    ext = os.path.splitext(filename)[1].lower()
+    return f"platform_broadcast_media/{uuid.uuid4().hex}{ext}"
+
+
+class PlatformBroadcastMedia(models.Model):
+    """Superadmin-authored media for a platform-wide broadcast. Deliberately
+    NOT a TenantScopedModel — TenantScopedModel.tenant is a required FK, and
+    this media exists before any tenant is chosen (it fans out to all of
+    them). See PlatformBroadcast."""
+
+    class MediaType(models.TextChoices):
+        IMAGE = "image", "Image"
+        VIDEO = "video", "Video"
+
+    file = models.FileField(upload_to=platform_broadcast_media_upload_path)
+    media_type = models.CharField(max_length=10, choices=MediaType.choices)
+    original_filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    size_bytes = models.PositiveBigIntegerField()
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.original_filename
+
+
+class PlatformBroadcast(models.Model):
+    """A superadmin broadcast fanned out to every active tenant's customers
+    through that tenant's own bot (CLAUDE.md §7c superadmin dashboard).
+    Deliberately not tenant-scoped, for the same reason as
+    PlatformBroadcastMedia. Sending it creates one per-tenant `Broadcast` row
+    per active, bot-configured tenant (see `Broadcast.platform_broadcast` and
+    apps.broadcasts.tasks.send_platform_broadcast) and reuses the existing
+    per-tenant `send_broadcast` task unchanged for actual delivery.
+
+    No sent_count/failed_count/tenant_count columns here — those are derived
+    from the child Broadcast rows (apps.broadcasts.api_views.
+    PlatformBroadcastViewSet.get_queryset annotates them) rather than kept as
+    a second, driftable source of truth.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SENDING = "sending", "Sending"
+        SENT = "sent", "Sent"
+        FAILED = "failed", "Failed"
+
+    title = models.CharField(max_length=255)
+    body = models.TextField(blank=True)
+    media = models.ForeignKey(
+        PlatformBroadcastMedia,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="platform_broadcasts",
+    )
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+
+
 class Broadcast(TenantScopedModel):
     """CLAUDE.md §5. Pulled forward from Phase 8 into Phase 7, since Phase
     7's own done-criterion ("tenant admin ... sends a broadcast") requires
@@ -70,6 +140,18 @@ class Broadcast(TenantScopedModel):
     failed_count = models.PositiveIntegerField(default=0)
     sent_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    platform_broadcast = models.ForeignKey(
+        PlatformBroadcast,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tenant_legs",
+        help_text="Set when this row is one tenant's leg of a superadmin "
+        "platform-wide broadcast, fanned out by "
+        "apps.broadcasts.tasks.send_platform_broadcast. Null for a normal "
+        "tenant_admin-authored broadcast — also the marker used to exclude "
+        "these from a tenant's monthly broadcast_quota count.",
+    )
 
     def __str__(self):
         return self.title

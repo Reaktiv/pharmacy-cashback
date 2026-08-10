@@ -110,6 +110,13 @@ class Tenant(models.Model):
         help_text="Default per-seller daily transaction cap for this tenant. "
         "Null = unlimited. A Seller.daily_txn_limit, when set, overrides this.",
     )
+    broadcast_quota = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Max broadcasts a tenant can send per calendar month, shared "
+        "across all its tenant_admin logins. Null = unlimited.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):

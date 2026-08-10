@@ -10,6 +10,7 @@ import TenantDetailPage from './pages/TenantDetailPage'
 import TenantAdminPage from './pages/TenantAdminPage'
 import SellersPage from './pages/SellersPage'
 import BroadcastsPage from './pages/BroadcastsPage'
+import SuperadminBroadcastsPage from './pages/SuperadminBroadcastsPage'
 import ReportsPage from './pages/ReportsPage'
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
                 <Route element={<ProtectedRoute allow={['superadmin']} />}>
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/tenants/:id" element={<TenantDetailPage />} />
+                  <Route path="/platform-broadcasts" element={<SuperadminBroadcastsPage />} />
                 </Route>
 
                 <Route element={<ProtectedRoute allow={['tenant_admin']} />}>

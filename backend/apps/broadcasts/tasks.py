@@ -25,10 +25,17 @@ from dataclasses import dataclass, field
 from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import FSInputFile
 from celery import shared_task
+from django.core.files.base import ContentFile
+from django.db import transaction as db_transaction
 from django.utils import timezone
 
 from apps.bot.telegram_client import build_client
-from apps.broadcasts.models import Broadcast, BroadcastDeliveryLog, BroadcastMedia
+from apps.broadcasts.models import (
+    Broadcast,
+    BroadcastDeliveryLog,
+    BroadcastMedia,
+    PlatformBroadcast,
+)
 from apps.broadcasts.sanitizer import render_broadcast_message_html
 from apps.customers.models import Customer
 from apps.tenants.models import Bot as BotRow
@@ -189,3 +196,101 @@ def send_broadcast(broadcast_id: int) -> None:
         Customer.objects.all_tenants().filter(pk__in=result.blocked_customer_ids).update(
             is_active=False
         )
+
+
+def _copy_media_for_tenant(src, tenant, uploaded_by) -> BroadcastMedia:
+    """Duplicates a superadmin-authored PlatformBroadcastMedia into a fresh
+    tenant-scoped BroadcastMedia row, so each tenant leg of a platform
+    broadcast owns its own file under the normal tenant-scoped storage path
+    — mirrors the isolation-boundary comment on broadcast_media_upload_path
+    (the boundary is the queryset, not the path, but every tenant still
+    needs its own row to be reachable through that queryset at all)."""
+    media = BroadcastMedia(
+        tenant=tenant,
+        media_type=src.media_type,
+        original_filename=src.original_filename,
+        content_type=src.content_type,
+        size_bytes=src.size_bytes,
+        uploaded_by=uploaded_by,
+    )
+    with src.file.open("rb") as fh:
+        media.file.save(src.original_filename, ContentFile(fh.read()), save=False)
+    media.save()
+    return media
+
+
+@shared_task
+def send_platform_broadcast(platform_broadcast_id: int) -> None:
+    """Fans a superadmin's PlatformBroadcast out to every active tenant that
+    has an active, tokened bot: creates one tenant-scoped Broadcast leg per
+    tenant (already in SENDING status — never DRAFT, see below) and hands
+    each off to the existing, unchanged send_broadcast task for actual
+    delivery. Reuses that task's throttling/retry/delivery-log/
+    blocked-customer handling completely rather than reimplementing any of
+    it here.
+
+    Legs are created as SENDING, not the model-default DRAFT: a DRAFT leg
+    would sit fully visible (and clickable) in the owning tenant's own
+    GET /api/broadcasts/ list for the whole gap between this task creating
+    it and send_broadcast actually running, letting that tenant's own
+    tenant_admin click "Send" on it first and double-enqueue delivery to
+    their own customers. Creating it already-SENDING in one atomic INSERT
+    closes that window entirely, and BroadcastViewSet.send()'s existing
+    "only a draft can be sent" guard rejects any such attempt for free.
+
+    Each tenant's leg is wrapped in its own try/except: one tenant's media
+    copy or DB error must not abort dispatch to every other tenant queued
+    after it.
+    """
+    platform_broadcast = PlatformBroadcast.objects.select_related("media").get(
+        pk=platform_broadcast_id
+    )
+
+    # Sourced from Bot (not Tenant) so "is this tenant sendable" uses
+    # exactly the same criteria send_broadcast itself checks
+    # (bot_row is None or not bot_row.token_encrypted) — one definition of
+    # "sendable," not two that can quietly drift apart.
+    bots = (
+        BotRow.objects.all_tenants()
+        .filter(is_active=True, tenant__is_active=True)
+        .exclude(token_encrypted="")
+        .select_related("tenant")
+    )
+
+    dispatched = 0
+    for bot_row in bots:
+        tenant = bot_row.tenant
+        try:
+            with db_transaction.atomic():
+                media = (
+                    _copy_media_for_tenant(
+                        platform_broadcast.media, tenant, platform_broadcast.created_by
+                    )
+                    if platform_broadcast.media
+                    else None
+                )
+                leg = Broadcast.objects.all_tenants().create(
+                    tenant=tenant,
+                    title=platform_broadcast.title,
+                    body=platform_broadcast.body,
+                    media=media,
+                    created_by=platform_broadcast.created_by,
+                    platform_broadcast=platform_broadcast,
+                    status=Broadcast.Status.SENDING,
+                )
+        except Exception:
+            logger.exception(
+                "Platform broadcast %s: failed to dispatch for tenant %s",
+                platform_broadcast_id,
+                tenant.pk,
+            )
+            continue
+
+        send_broadcast.delay(leg.pk)
+        dispatched += 1
+
+    platform_broadcast.status = (
+        PlatformBroadcast.Status.SENT if dispatched else PlatformBroadcast.Status.FAILED
+    )
+    platform_broadcast.sent_at = timezone.now()
+    platform_broadcast.save(update_fields=["status", "sent_at"])

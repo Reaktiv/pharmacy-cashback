@@ -486,6 +486,18 @@ export default function TenantAdminPage() {
         <RateForm tenant={tenant} onSaved={setTenant} />
       </div>
 
+      <div className="card">
+        <div className="card-title-row">
+          <h3>{t('tenant_admin_quota_card_heading')}</h3>
+        </div>
+        <p style={{ marginTop: 0, marginBottom: 0 }}>
+          {t('tenant_detail_quota_usage', {
+            used: tenant.broadcasts_sent_this_month,
+            quota: tenant.broadcast_quota === null ? '∞' : tenant.broadcast_quota,
+          })}
+        </p>
+      </div>
+
       <div className="section-head">
         <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <IconBuilding /> {t('label_branches')}

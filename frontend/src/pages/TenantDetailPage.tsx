@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
-import type { BranchReportRow, DailyReportRow, Tenant, TenantBot } from '../api/types'
+import type { BranchReportRow, DailyReportRow, Tenant, TenantAdmin, TenantBot } from '../api/types'
 import { activeStatusLabel } from '../lib/labels'
 import { useLanguage } from '../lib/i18n'
 import StatCard from '../components/StatCard'
@@ -9,6 +9,7 @@ import EmptyState from '../components/EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
 import { DualBarChart } from '../components/Charts'
 import ConfirmDialog, { DoubleConfirmDialog } from '../components/ConfirmDialog'
+import DetailDrawer, { DrawerField } from '../components/DetailDrawer'
 import {
   IconAlertCircle,
   IconCheckCircle,
@@ -20,6 +21,9 @@ import {
   IconScale,
   IconClipboardEmpty,
   IconTrash,
+  IconUsers,
+  IconPlus,
+  IconMegaphone,
 } from '../components/Icons'
 
 function asArray<T>(data: T[] | { results: T[] }): T[] {
@@ -200,6 +204,263 @@ function BotSection({ tenantId }: { tenantId: number }) {
   )
 }
 
+function BroadcastQuotaSection({
+  tenantId,
+  quota,
+  sentThisMonth,
+  onSaved,
+}: {
+  tenantId: number
+  quota: number | null
+  sentThisMonth: number
+  onSaved: (t: Tenant) => void
+}) {
+  const { t } = useLanguage()
+  const [value, setValue] = useState(quota === null ? '' : String(quota))
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!saved) return
+    const timer = setTimeout(() => setSaved(false), 3200)
+    return () => clearTimeout(timer)
+  }, [saved])
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    setSubmitting(true)
+    try {
+      const updated = await apiFetch<Tenant>(`/api/tenants/${tenantId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          broadcast_quota: value.trim() === '' ? null : Number(value),
+        }),
+      })
+      onSaved(updated)
+      setSaved(true)
+    } catch (err) {
+      setError(
+        extractFieldError(err, 'broadcast_quota') ??
+          (err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_quota_save_error')),
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div>
+      {error && (
+        <div className="error-banner">
+          <IconAlertCircle />
+          <span>{error}</span>
+        </div>
+      )}
+      {saved && (
+        <div className="toast">
+          <IconCheckCircle />
+          {t('tenant_detail_saved_toast')}
+        </div>
+      )}
+      <p style={{ marginTop: 0 }}>
+        {t('tenant_detail_quota_usage', {
+          used: sentThisMonth,
+          quota: quota === null ? '∞' : quota,
+        })}
+      </p>
+      <form onSubmit={handleSubmit}>
+        <div className="field wide">
+          <label htmlFor="broadcast-quota">{t('field_broadcast_quota')}</label>
+          <input
+            id="broadcast-quota"
+            type="number"
+            min={0}
+            step={1}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={t('unlimited')}
+          />
+          <p className="hint">{t('field_broadcast_quota_hint')}</p>
+        </div>
+        <button type="submit" disabled={submitting}>
+          {submitting ? t('saving') : t('save')}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function TenantAdminsSection({ tenantId }: { tenantId: number }) {
+  const { t, language } = useLanguage()
+  const [admins, setAdmins] = useState<TenantAdmin[] | null>(null)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const [selected, setSelected] = useState<TenantAdmin | null>(null)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const load = () => {
+    apiFetch<TenantAdmin[] | { results: TenantAdmin[] }>(`/api/tenant-admins/?tenant=${tenantId}`).then(
+      (data) => setAdmins(asArray(data)),
+    )
+  }
+
+  useEffect(load, [tenantId])
+
+  const handleCreate = async (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    try {
+      await apiFetch('/api/tenant-admins/', {
+        method: 'POST',
+        body: JSON.stringify({ tenant: tenantId, username, password }),
+      })
+      setUsername('')
+      setPassword('')
+      load()
+    } catch (err) {
+      setError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_admin_create_error'))
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!selected) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await apiFetch(`/api/tenant-admins/${selected.id}/`, { method: 'DELETE' })
+      setConfirmDeleteOpen(false)
+      setSelected(null)
+      load()
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_admin_delete_error'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  if (!admins) return <SkeletonTable rows={2} />
+
+  return (
+    <div>
+      <div className="table-card">
+        {admins.length === 0 ? (
+          <EmptyState icon={<IconUsers />} title={t('tenant_detail_admins_empty_title')} />
+        ) : (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('th_login')}</th>
+                  <th>{t('status_label')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {admins.map((a) => (
+                  <tr key={a.id} className="clickable" onClick={() => setSelected(a)}>
+                    <td>{a.username}</td>
+                    <td>
+                      <span className={`status-badge ${a.is_active ? 'active' : 'inactive'}`}>
+                        {activeStatusLabel(language, a.is_active ? 'active' : 'inactive')}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={handleCreate} style={{ marginTop: '1rem' }}>
+        {error && (
+          <div className="error-banner">
+            <IconAlertCircle />
+            <span>{error}</span>
+          </div>
+        )}
+        <div className="form-grid" style={{ alignItems: 'flex-end' }}>
+          <div className="field">
+            <label htmlFor="admin-username">{t('field_login')}</label>
+            <input id="admin-username" value={username} onChange={(e) => setUsername(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="admin-password">{t('field_password')}</label>
+            <input
+              id="admin-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+        <button type="submit">
+          <IconPlus />
+          {t('tenant_detail_add_admin_button')}
+        </button>
+      </form>
+
+      <DetailDrawer
+        open={!!selected}
+        title={selected?.username ?? ''}
+        subtitle={t('admin_drawer_subtitle')}
+        avatarLabel={selected?.username.slice(0, 2).toUpperCase()}
+        onClose={() => setSelected(null)}
+        footer={
+          <>
+            {deleteError && (
+              <div className="error-banner" style={{ marginBottom: '0.9rem' }}>
+                <IconAlertCircle />
+                <span>{deleteError}</span>
+              </div>
+            )}
+            <button type="button" className="danger" style={{ width: '100%' }} onClick={() => setConfirmDeleteOpen(true)}>
+              <IconTrash />
+              {t('admin_delete_button')}
+            </button>
+          </>
+        }
+      >
+        {selected && (
+          <>
+            <DrawerField label={t('field_login')} value={selected.username} />
+            <DrawerField
+              label={t('status_label')}
+              value={
+                <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
+                  {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
+                </span>
+              }
+            />
+          </>
+        )}
+      </DetailDrawer>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        title={t('admin_delete_title')}
+        description={
+          <>
+            <strong>{selected?.username}</strong>
+            {t('login_will_lose_access')}
+          </>
+        }
+        confirmLabel={t('delete_confirm')}
+        tone="danger"
+        confirming={deleting}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+      />
+    </div>
+  )
+}
+
 export default function TenantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -322,6 +583,27 @@ export default function TenantDetailPage() {
         </div>
         <BotSection tenantId={tenant.id} />
       </div>
+
+      <div className="card">
+        <div className="card-title-row">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <IconMegaphone /> {t('tenant_detail_quota_card_heading')}
+          </h3>
+        </div>
+        <BroadcastQuotaSection
+          tenantId={tenant.id}
+          quota={tenant.broadcast_quota}
+          sentThisMonth={tenant.broadcasts_sent_this_month}
+          onSaved={setTenant}
+        />
+      </div>
+
+      <div className="section-head">
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <IconUsers /> {t('tenant_detail_admins_card_heading')}
+        </h2>
+      </div>
+      <TenantAdminsSection tenantId={tenant.id} />
 
       <div className="section-head">
         <h2>{t('label_branches')}</h2>

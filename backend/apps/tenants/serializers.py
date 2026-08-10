@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.bot.telegram_client import TelegramTokenValidationError, validate_bot_token
@@ -5,6 +6,11 @@ from apps.tenants.models import Bot, GlobalSettings, Tenant
 
 
 class TenantSerializer(serializers.ModelSerializer):
+    # Imported lazily inside the method (not at module level) to avoid a
+    # cross-app import cycle: apps.broadcasts.models already imports from
+    # apps.tenants.models.
+    broadcasts_sent_this_month = serializers.SerializerMethodField()
+
     class Meta:
         model = Tenant
         fields = [
@@ -16,9 +22,34 @@ class TenantSerializer(serializers.ModelSerializer):
             "min_redeem_amount",
             "points_expiry_days",
             "default_daily_txn_limit",
+            "broadcast_quota",
+            "broadcasts_sent_this_month",
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+    def get_broadcasts_sent_this_month(self, obj) -> int:
+        from apps.broadcasts.models import Broadcast
+
+        # localtime(), not a raw now(): USE_TZ=True + TIME_ZONE=Asia/Tashkent
+        # (CLAUDE.md §9) means a UTC-aware now() can read off the wrong
+        # calendar month near midnight Tashkent time (UTC+5).
+        now = timezone.localtime(timezone.now())
+        return (
+            Broadcast.objects.all_tenants()
+            .filter(
+                tenant=obj,
+                platform_broadcast__isnull=True,
+                status__in=[
+                    Broadcast.Status.SENDING,
+                    Broadcast.Status.SENT,
+                    Broadcast.Status.FAILED,
+                ],
+                created_at__year=now.year,
+                created_at__month=now.month,
+            )
+            .count()
+        )
 
     def validate_cashback_rate(self, value):
         cap = GlobalSettings.load().max_cashback_rate
@@ -30,13 +61,14 @@ class TenantSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         # CLAUDE.md §3: a tenant admin manages their own tenant's rate, but
-        # slug/is_active are superadmin-only levers (slug changes would
-        # break the tenant's webhook URL; is_active is a platform-level
-        # kill switch).
+        # slug/is_active/broadcast_quota are superadmin-only levers (slug
+        # changes would break the tenant's webhook URL; is_active is a
+        # platform-level kill switch; broadcast_quota is the paid-tier lever
+        # a tenant_admin must not be able to raise for itself).
         request = self.context.get("request")
         profile = getattr(request.user, "profile", None) if request else None
         if profile is not None and profile.role != profile.Role.SUPERADMIN:
-            for locked_field in ("slug", "is_active"):
+            for locked_field in ("slug", "is_active", "broadcast_quota"):
                 if locked_field in attrs and self.instance is not None:
                     if getattr(self.instance, locked_field) != attrs[locked_field]:
                         raise serializers.ValidationError(

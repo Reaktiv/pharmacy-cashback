@@ -38,6 +38,7 @@ class TenantViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old_rate = serializer.instance.cashback_rate
+        old_quota = serializer.instance.broadcast_quota
         tenant = serializer.save()
         if tenant.cashback_rate != old_rate:
             log_action(
@@ -47,6 +48,15 @@ class TenantViewSet(viewsets.ModelViewSet):
                 target_type="Tenant",
                 target_id=tenant.id,
                 metadata={"old_rate": str(old_rate), "new_rate": str(tenant.cashback_rate)},
+            )
+        if tenant.broadcast_quota != old_quota:
+            log_action(
+                tenant=tenant,
+                actor=self.request.user,
+                action="broadcast_quota_changed",
+                target_type="Tenant",
+                target_id=tenant.id,
+                metadata={"old_quota": old_quota, "new_quota": tenant.broadcast_quota},
             )
 
     def perform_destroy(self, instance):

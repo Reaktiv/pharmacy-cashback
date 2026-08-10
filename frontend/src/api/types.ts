@@ -9,6 +9,8 @@ export interface Tenant {
   min_redeem_amount: string
   points_expiry_days: number | null
   default_daily_txn_limit: number | null
+  broadcast_quota: number | null
+  broadcasts_sent_this_month: number
   created_at: string
 }
 
@@ -51,6 +53,14 @@ export interface BranchManager {
   is_active: boolean
 }
 
+export interface TenantAdmin {
+  id: number
+  username: string
+  tenant: number
+  tenant_name: string
+  is_active: boolean
+}
+
 export interface BroadcastMedia {
   id: number
   media_type: 'image' | 'video'
@@ -68,6 +78,28 @@ export interface Broadcast {
   status: 'draft' | 'sending' | 'sent' | 'failed'
   sent_count: number
   failed_count: number
+  created_at: string
+  sent_at: string | null
+}
+
+export interface PlatformBroadcastMedia {
+  id: number
+  media_type: 'image' | 'video'
+  original_filename: string
+  size_bytes: number
+  url: string
+  created_at: string
+}
+
+export interface PlatformBroadcast {
+  id: number
+  title: string
+  body: string
+  media: PlatformBroadcastMedia | null
+  status: 'draft' | 'sending' | 'sent' | 'failed'
+  sent_count: number
+  failed_count: number
+  tenant_count: number
   created_at: string
   sent_at: string | null
 }

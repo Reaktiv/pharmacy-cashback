@@ -4,6 +4,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from apps.accounts.models import Branch, Seller, UserProfile
+from apps.tenants.models import Tenant
 
 
 class TenantAwareTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -172,6 +173,72 @@ class BranchManagerSerializer(serializers.Serializer):
                 raise serializers.ValidationError({"branch": "Branch must belong to your tenant."})
             instance.branch = branch
             instance.save(update_fields=["branch"])
+        if password:
+            instance.user.set_password(password)
+            instance.user.save(update_fields=["password"])
+        if is_active is not None:
+            instance.user.is_active = is_active
+            instance.user.save(update_fields=["is_active"])
+        return instance
+
+
+class TenantAdminSerializer(serializers.Serializer):
+    """Creates/manages a tenant admin login: a User + UserProfile(role=
+    TENANT_ADMIN) pair scoped to one tenant (CLAUDE.md §3/§7c: the
+    superadmin is the one who creates tenants, so they're also the one who
+    provisions the login able to administer a freshly created tenant).
+
+    Same no-separate-model shape as BranchManagerSerializer above — there is
+    no dedicated TenantAdmin model, UserProfile is the whole record.
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(write_only=True, required=False)
+    password = serializers.CharField(
+        write_only=True, required=False, style={"input_type": "password"}
+    )
+    tenant = serializers.PrimaryKeyRelatedField(queryset=Tenant.objects.all())
+    tenant_name = serializers.CharField(source="tenant.name", read_only=True)
+    is_active = serializers.BooleanField(source="user.is_active", required=False)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["username"] = instance.user.username
+        return data
+
+    def validate(self, attrs):
+        if self.instance is None:
+            if not attrs.get("username") or not attrs.get("password"):
+                raise serializers.ValidationError(
+                    "username and password are required when creating a tenant admin."
+                )
+        return attrs
+
+    def create(self, validated_data):
+        username = validated_data.pop("username")
+        password = validated_data.pop("password")
+        tenant = validated_data["tenant"]
+
+        with db_transaction.atomic():
+            user = User.objects.create_user(username=username, password=password)
+            profile, _ = UserProfile.objects.update_or_create(
+                user=user,
+                defaults={
+                    "role": UserProfile.Role.TENANT_ADMIN,
+                    "tenant": tenant,
+                    "branch": None,
+                },
+            )
+        return profile
+
+    def update(self, instance, validated_data):
+        validated_data.pop("username", None)
+        password = validated_data.pop("password", None)
+        is_active = validated_data.pop("user", {}).get("is_active")
+        tenant = validated_data.get("tenant")
+        if tenant is not None:
+            instance.tenant = tenant
+            instance.save(update_fields=["tenant"])
         if password:
             instance.user.set_password(password)
             instance.user.save(update_fields=["password"])

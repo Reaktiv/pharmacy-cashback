@@ -27,6 +27,11 @@ const STRINGS = {
   nav_tenant: { uz: 'Tarmoq', en: 'Network', ru: 'Сеть' },
   nav_sellers: { uz: 'Sotuvchilar', en: 'Sellers', ru: 'Продавцы' },
   nav_broadcasts: { uz: 'Xabarnomalar', en: 'Broadcasts', ru: 'Рассылки' },
+  nav_platform_broadcasts: {
+    uz: 'Platforma xabarnomalari',
+    en: 'Platform broadcasts',
+    ru: 'Платформенные рассылки',
+  },
   nav_reports: { uz: 'Hisobotlar', en: 'Reports', ru: 'Отчёты' },
   nav_group_label: { uz: "Bo'limlar", en: 'Sections', ru: 'Разделы' },
   page_title_dashboard: { uz: 'Boshqaruv paneli', en: 'Dashboard', ru: 'Панель управления' },
@@ -34,6 +39,11 @@ const STRINGS = {
   page_title_tenant: { uz: 'Tarmoq sozlamalari', en: 'Network settings', ru: 'Настройки сети' },
   page_title_sellers: { uz: 'Sotuvchilar', en: 'Sellers', ru: 'Продавцы' },
   page_title_broadcasts: { uz: 'Xabarnomalar', en: 'Broadcasts', ru: 'Рассылки' },
+  page_title_platform_broadcasts: {
+    uz: 'Platforma xabarnomalari',
+    en: 'Platform broadcasts',
+    ru: 'Платформенные рассылки',
+  },
   page_title_reports: { uz: 'Hisobotlar', en: 'Reports', ru: 'Отчёты' },
   page_title_fallback: { uz: 'Pharmacy Cashback', en: 'Pharmacy Cashback', ru: 'Pharmacy Cashback' },
   logout: { uz: 'Chiqish', en: 'Log out', ru: 'Выйти' },
@@ -177,6 +187,7 @@ const STRINGS = {
   status_label: { uz: 'Holati', en: 'Status', ru: 'Статус' },
   fallback_dash: { uz: '—', en: '—', ru: '—' },
   saving: { uz: 'Saqlanmoqda…', en: 'Saving…', ru: 'Сохранение…' },
+  save: { uz: 'Saqlash', en: 'Save', ru: 'Сохранить' },
   eyebrow_tenant: { uz: 'Tarmoq', en: 'Network', ru: 'Сеть' },
   label_earned: { uz: "Yig'ilgan", en: 'Earned', ru: 'Начислено' },
   label_spent: { uz: 'Sarflangan', en: 'Spent', ru: 'Потрачено' },
@@ -287,6 +298,31 @@ const STRINGS = {
   label_outstanding_liability: { uz: 'Qoldiq (majburiyat)', en: 'Outstanding (liability)', ru: 'Остаток (обязательства)' },
   label_branches: { uz: 'Filiallar', en: 'Branches', ru: 'Филиалы' },
   tenant_detail_bot_card_heading: { uz: 'Telegram bot', en: 'Telegram bot', ru: 'Telegram-бот' },
+  tenant_detail_quota_card_heading: {
+    uz: 'Xabarnoma limiti',
+    en: 'Broadcast quota',
+    ru: 'Лимит рассылок',
+  },
+  tenant_detail_quota_usage: {
+    uz: 'Bu oy: {used} / {quota} ta xabarnoma yuborildi.',
+    en: 'This month: {used} / {quota} broadcasts sent.',
+    ru: 'В этом месяце: отправлено {used} / {quota} рассылок.',
+  },
+  tenant_detail_quota_save_error: {
+    uz: "Limitni saqlab bo'lmadi.",
+    en: "Couldn't save the quota.",
+    ru: 'Не удалось сохранить лимит.',
+  },
+  field_broadcast_quota: {
+    uz: 'Oylik xabarnoma limiti',
+    en: 'Monthly broadcast quota',
+    ru: 'Месячный лимит рассылок',
+  },
+  field_broadcast_quota_hint: {
+    uz: "Bu tarmoqning barcha tarmoq adminlari birgalikda oyiga shuncha xabarnoma yubora oladi. Bo'sh qoldiring — cheklanmagan.",
+    en: 'All of this tenant’s tenant_admin logins share this monthly cap. Leave empty for unlimited.',
+    ru: 'Все администраторы этой сети вместе могут отправить столько рассылок в месяц. Оставьте пустым — без ограничений.',
+  },
   th_branch: { uz: 'Filial', en: 'Branch', ru: 'Филиал' },
   last_14_days: { uz: "So'nggi 14 kun", en: 'Last 14 days', ru: 'Последние 14 дней' },
   tenant_delete_step1_title: { uz: "Tarmoqni o'chirasizmi?", en: 'Delete this network?', ru: 'Удалить сеть?' },
@@ -300,6 +336,22 @@ const STRINGS = {
     en: 'All transactions will be permanently deleted',
     ru: 'Все транзакции будут полностью удалены',
   },
+  tenant_detail_admins_card_heading: { uz: 'Tarmoq adminlari', en: 'Tenant admins', ru: 'Администраторы сети' },
+  tenant_detail_admins_empty_title: { uz: "Hozircha tarmoq admini yo'q", en: 'No tenant admins yet', ru: 'Пока нет администраторов сети' },
+  tenant_detail_admin_create_error: {
+    uz: "Tarmoq adminini yaratib bo'lmadi.",
+    en: "Couldn't create the tenant admin.",
+    ru: 'Не удалось создать администратора сети.',
+  },
+  tenant_detail_admin_delete_error: {
+    uz: "Tarmoq adminini o'chirib bo'lmadi.",
+    en: "Couldn't delete the tenant admin.",
+    ru: 'Не удалось удалить администратора сети.',
+  },
+  tenant_detail_add_admin_button: { uz: "Admin qo'shish", en: 'Add admin', ru: 'Добавить администратора' },
+  admin_drawer_subtitle: { uz: 'Tarmoq admini', en: 'Tenant admin', ru: 'Администратор сети' },
+  admin_delete_button: { uz: "Adminni o'chirish", en: 'Delete admin', ru: 'Удалить администратора' },
+  admin_delete_title: { uz: "Tarmoq adminini o'chirasizmi?", en: 'Delete this tenant admin?', ru: 'Удалить администратора сети?' },
   tenant_delete_step2_description: {
     uz: " tarmog'ining barcha tranzaksiya tarixi, botiga bog'liq narsalar bilan birga, butunlay o'chib ketadi. Bu amalni ortga qaytarib bo'lmaydi.",
     en: "'s entire transaction history, along with everything tied to its bot, will be permanently deleted. This action cannot be undone.",
@@ -364,6 +416,11 @@ const STRINGS = {
     ru: ' больше не сможет входить в систему. Это действие нельзя отменить.',
   },
   tenant_admin_rate_card_heading: { uz: 'Foizni sozlash', en: 'Set the rate', ru: 'Настройка ставки' },
+  tenant_admin_quota_card_heading: {
+    uz: 'Xabarnoma limiti',
+    en: 'Broadcast quota',
+    ru: 'Лимит рассылок',
+  },
   section_heading_branch_managers: { uz: 'Filial menejerlari', en: 'Branch managers', ru: 'Менеджеры филиалов' },
 
   // ---- SellersPage ----
@@ -409,8 +466,31 @@ const STRINGS = {
   th_media: { uz: 'Media', en: 'Media', ru: 'Медиа' },
   th_sent: { uz: 'Yuborildi', en: 'Sent', ru: 'Отправлено' },
   th_failed: { uz: 'Muvaffaqiyatsiz', en: 'Failed', ru: 'Не удалось' },
+  th_tenants: { uz: 'Apteka tizimlari', en: 'Tenants', ru: 'Сети аптек' },
   media_type_image: { uz: 'Rasm', en: 'Image', ru: 'Изображение' },
   media_type_video: { uz: 'Video', en: 'Video', ru: 'Видео' },
+
+  // ---- SuperadminBroadcastsPage ----
+  platform_broadcasts_heading: {
+    uz: 'Platforma xabarnomalari',
+    en: 'Platform broadcasts',
+    ru: 'Платформенные рассылки',
+  },
+  platform_broadcasts_description: {
+    uz: "Bu yerdan yuborilgan xabarnoma barcha faol apteka tizimlarining mijozlariga, har birining o'z boti orqali yuboriladi.",
+    en: 'A broadcast sent from here goes out to every active tenant’s customers, through each tenant’s own bot.',
+    ru: 'Рассылка, отправленная отсюда, уходит клиентам всех активных сетей аптек через бота каждой сети.',
+  },
+  platform_broadcast_new_description: {
+    uz: "Barcha apteka tizimlariga yuboriladi — tarmoqlarning oylik xabarnoma limitiga ta'sir qilmaydi.",
+    en: 'Sent to every tenant — never counts against any tenant’s monthly broadcast quota.',
+    ru: 'Отправляется всем сетям аптек — не учитывается в месячном лимите рассылок ни одной сети.',
+  },
+  platform_broadcast_send_now_button: {
+    uz: 'Barchaga yuborish',
+    en: 'Send to everyone',
+    ru: 'Отправить всем',
+  },
   broadcast_sending: { uz: 'Yuborilmoqda…', en: 'Sending…', ru: 'Отправка…' },
   broadcast_send_button: { uz: 'Yuborish', en: 'Send', ru: 'Отправить' },
   broadcast_new_heading: { uz: 'Yangi xabarnoma', en: 'New broadcast', ru: 'Новая рассылка' },

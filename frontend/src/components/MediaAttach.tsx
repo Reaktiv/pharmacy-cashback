@@ -38,9 +38,11 @@ function validate(file: File, t: TFunction): string | null {
 export default function MediaAttach({
   value,
   onChange,
+  uploadEndpoint = '/api/broadcast-media/',
 }: {
   value: AttachedMedia | null
   onChange: (media: AttachedMedia | null) => void
+  uploadEndpoint?: string
 }) {
   const { t } = useLanguage()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -64,7 +66,7 @@ export default function MediaAttach({
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const uploaded = await apiFetch<BroadcastMedia>('/api/broadcast-media/', {
+      const uploaded = await apiFetch<BroadcastMedia>(uploadEndpoint, {
         method: 'POST',
         body: formData,
       })
