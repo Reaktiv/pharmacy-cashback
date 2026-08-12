@@ -93,8 +93,15 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
+    # Docker only auto-seeds a *newly created, empty* named volume from the
+    # image's content at the mount path — on every deploy after the first,
+    # frontend-dist already has (now-stale) files in it, so mounting the
+    # volume straight over /app/dist would hide each new build behind the
+    # very first one forever. Mount it at a different path instead and
+    # explicitly replace its contents with this build's output every time.
+    command: sh -c "rm -rf /out/* && cp -r /app/dist/. /out/"
     volumes:
-      - frontend-dist:/app/dist
+      - frontend-dist:/out
     restart: "no"
 
   nginx:

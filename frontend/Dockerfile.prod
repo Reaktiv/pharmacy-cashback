@@ -1,9 +1,10 @@
 # Build-only image: `npm run build` bakes /app/dist into this image at
-# build time. docker-compose.prod.yml mounts an empty named volume over
-# /app/dist, so Docker auto-seeds that volume from the image on first
-# container creation (standard behavior for volumes mounted over
-# non-empty image paths) — the nginx service then reads the same volume
-# read-only. The container itself does nothing at runtime and exits.
+# build time. docker-compose.prod.yml overrides CMD with a command that
+# copies /app/dist into a named volume mounted at /out — nginx then reads
+# that same volume read-only. (A volume mounted straight over /app/dist
+# would only get auto-seeded from the image the *first* time it's empty;
+# every rebuild after that needs an explicit copy, which is what the
+# compose-level `command:` does.)
 FROM node:22-slim
 WORKDIR /app
 COPY package.json package-lock.json ./
