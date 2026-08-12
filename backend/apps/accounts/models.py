@@ -1,8 +1,19 @@
+import os
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.tenants.models import Tenant, TenantScopedModel
+
+
+def avatar_upload_path(instance: "UserProfile", filename: str) -> str:
+    """Per-user storage path. Not the isolation boundary — MeAvatarView
+    (the only thing that ever reads these back) always serves the
+    authenticated request.user's own profile, never an arbitrary path."""
+    ext = os.path.splitext(filename)[1].lower()
+    return f"avatars/{instance.user_id}/{uuid.uuid4().hex}{ext}"
 
 
 class UserProfile(models.Model):
@@ -36,6 +47,16 @@ class UserProfile(models.Model):
         on_delete=models.CASCADE,
         related_name="user_profiles",
     )
+
+    # Self-service profile fields (every role, incl. superadmin) — a
+    # convenience layer on top of the login itself, not part of any CLAUDE.md
+    # domain rule. For a SELLER profile, full_name/phone mirror the linked
+    # Seller row (the authoritative copy used by reports/listings) — see
+    # apps.accounts.signals.sync_profile_with_seller and
+    # MeSerializer.update, which keep the two in sync in both directions.
+    full_name = models.CharField(max_length=255, blank=True, default="")
+    phone = models.CharField(max_length=20, blank=True, default="")
+    avatar = models.FileField(upload_to=avatar_upload_path, null=True, blank=True)
 
     def clean(self):
         super().clean()

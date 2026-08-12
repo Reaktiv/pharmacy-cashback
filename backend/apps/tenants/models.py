@@ -1,4 +1,6 @@
+import os
 import secrets
+import uuid
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -6,6 +8,21 @@ from django.db import models
 
 from apps.tenants.context import get_current_tenant, tenant_check_bypassed
 from apps.tenants.crypto import decrypt_token, encrypt_token
+
+
+def platform_logo_upload_path(instance: "GlobalSettings", filename: str) -> str:
+    """Not tenant-scoped — this is the superadmin-only, product-wide brand
+    logo shown pre-login and to superadmin accounts (CLAUDE.md §7c)."""
+    ext = os.path.splitext(filename)[1].lower()
+    return f"platform_logo/{uuid.uuid4().hex}{ext}"
+
+
+def tenant_logo_upload_path(instance: "Tenant", filename: str) -> str:
+    """Per-tenant storage path. Not itself the isolation boundary — every
+    view that reads this back scopes through the requester's own
+    UserProfile.tenant (CLAUDE.md §4), never an arbitrary tenant id."""
+    ext = os.path.splitext(filename)[1].lower()
+    return f"tenant_logos/{instance.pk}/{uuid.uuid4().hex}{ext}"
 
 
 class TenantContextError(RuntimeError):
@@ -73,6 +90,16 @@ class GlobalSettings(models.Model):
         max_digits=12, decimal_places=2, default=Decimal("2000000.00")
     )
     max_daily_redemptions_per_customer = models.PositiveIntegerField(default=5)
+    platform_name = models.CharField(
+        max_length=100,
+        default="Pharmacy Cashback",
+        help_text="Product-wide brand name shown on the login screen and in "
+        "the superadmin's own account (every tenant-scoped account sees its "
+        "own Tenant.name/logo instead — see Tenant.name/Tenant.logo).",
+    )
+    platform_logo = models.FileField(
+        upload_to=platform_logo_upload_path, null=True, blank=True
+    )
 
     class Meta:
         verbose_name = "Global settings"
@@ -117,6 +144,15 @@ class Tenant(models.Model):
         help_text="Max broadcasts a tenant can send per calendar month, shared "
         "across all its tenant_admin logins. Null = unlimited.",
     )
+    branch_limit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Max branches this tenant's admin can create in total "
+        "(CLAUDE.md-adjacent monetization lever, same shape as "
+        "broadcast_quota). Null = unlimited.",
+    )
+    logo = models.FileField(upload_to=tenant_logo_upload_path, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):

@@ -4,12 +4,20 @@ from rest_framework import serializers
 from apps.bot.telegram_client import TelegramTokenValidationError, validate_bot_token
 from apps.tenants.models import Bot, GlobalSettings, Tenant
 
+# Same cap as the self-service avatar (apps/accounts/serializers.py) — a
+# pharmacy logo, not a promotional image.
+LOGO_MAX_BYTES = 5 * 1024 * 1024
+
 
 class TenantSerializer(serializers.ModelSerializer):
     # Imported lazily inside the method (not at module level) to avoid a
     # cross-app import cycle: apps.broadcasts.models already imports from
     # apps.tenants.models.
     broadcasts_sent_this_month = serializers.SerializerMethodField()
+    branches_count = serializers.SerializerMethodField()
+    has_logo = serializers.SerializerMethodField()
+    logo = serializers.FileField(write_only=True, required=False)
+    remove_logo = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model = Tenant
@@ -24,9 +32,32 @@ class TenantSerializer(serializers.ModelSerializer):
             "default_daily_txn_limit",
             "broadcast_quota",
             "broadcasts_sent_this_month",
+            "branch_limit",
+            "branches_count",
+            "has_logo",
+            "logo",
+            "remove_logo",
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+    def get_has_logo(self, obj) -> bool:
+        return bool(obj.logo)
+
+    def validate_logo(self, uploaded_file):
+        content_type = uploaded_file.content_type or ""
+        if not content_type.startswith("image/"):
+            raise serializers.ValidationError("Faqat rasm fayli yuklash mumkin.")
+        if uploaded_file.size > LOGO_MAX_BYTES:
+            raise serializers.ValidationError(
+                f"Rasm hajmi {LOGO_MAX_BYTES // (1024 * 1024)}MB dan oshmasligi kerak."
+            )
+        return uploaded_file
+
+    def get_branches_count(self, obj) -> int:
+        from apps.accounts.models import Branch
+
+        return Branch.objects.all_tenants().filter(tenant=obj).count()
 
     def get_broadcasts_sent_this_month(self, obj) -> int:
         from apps.broadcasts.models import Broadcast
@@ -61,20 +92,47 @@ class TenantSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         # CLAUDE.md §3: a tenant admin manages their own tenant's rate, but
-        # slug/is_active/broadcast_quota are superadmin-only levers (slug
-        # changes would break the tenant's webhook URL; is_active is a
-        # platform-level kill switch; broadcast_quota is the paid-tier lever
-        # a tenant_admin must not be able to raise for itself).
+        # slug/is_active/broadcast_quota/branch_limit are superadmin-only
+        # levers (slug changes would break the tenant's webhook URL;
+        # is_active is a platform-level kill switch; broadcast_quota and
+        # branch_limit are paid-tier levers a tenant_admin must not be able
+        # to raise for itself).
         request = self.context.get("request")
         profile = getattr(request.user, "profile", None) if request else None
         if profile is not None and profile.role != profile.Role.SUPERADMIN:
-            for locked_field in ("slug", "is_active", "broadcast_quota"):
+            for locked_field in ("slug", "is_active", "broadcast_quota", "branch_limit"):
                 if locked_field in attrs and self.instance is not None:
                     if getattr(self.instance, locked_field) != attrs[locked_field]:
                         raise serializers.ValidationError(
                             {locked_field: "Only a superadmin can change this."}
                         )
         return attrs
+
+    def create(self, validated_data):
+        # Logo isn't set at creation time today (no tenant-creation form
+        # offers it — see DashboardPage.tsx), same convention as
+        # broadcast_quota/branch_limit; strip these so the default
+        # ModelSerializer.create() doesn't choke passing them straight to
+        # Tenant.objects.create().
+        validated_data.pop("logo", None)
+        validated_data.pop("remove_logo", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        logo = validated_data.pop("logo", None)
+        remove_logo = validated_data.pop("remove_logo", False)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        update_fields = list(validated_data.keys())
+        if remove_logo and instance.logo:
+            instance.logo.delete(save=False)
+            instance.logo = None
+            update_fields.append("logo")
+        elif logo is not None:
+            instance.logo = logo
+            update_fields.append("logo")
+        instance.save(update_fields=update_fields or None)
+        return instance
 
 
 class GlobalSettingsSerializer(serializers.ModelSerializer):

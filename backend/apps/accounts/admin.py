@@ -6,7 +6,7 @@ from apps.tenants.admin_utils import TenantScopedAdminMixin
 
 @admin.register(UserProfile)
 class UserProfileAdmin(TenantScopedAdminMixin, admin.ModelAdmin):
-    list_display = ("user", "role", "tenant", "branch")
+    list_display = ("user", "full_name", "phone", "role", "tenant", "branch")
     list_filter = ("role",)
 
 

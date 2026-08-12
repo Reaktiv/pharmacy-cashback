@@ -1,10 +1,16 @@
-from rest_framework import viewsets
+from django.http import FileResponse, Http404
+from rest_framework import generics, permissions, viewsets
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.models import Branch, Seller, UserProfile
 from apps.accounts.permissions import IsBranchManager, IsSuperadmin, IsTenantAdmin
 from apps.accounts.serializers import (
     BranchManagerSerializer,
     BranchSerializer,
+    ChangePasswordSerializer,
+    MeSerializer,
     SellerSerializer,
     TenantAdminSerializer,
 )
@@ -173,3 +179,65 @@ class SellerViewSet(viewsets.ModelViewSet):
         # Seller.user is CASCADE, and Transaction.seller is SET_NULL, so this
         # cleanly removes the login/profile without touching ledger history.
         instance.user.delete()
+
+
+class MeView(generics.RetrieveUpdateAPIView):
+    """Self-service `GET/PATCH /api/me/` — every logged-in internal user
+    (any role) can view/edit their own name, phone, and avatar. Not a
+    CLAUDE.md-mandated endpoint, just a usability layer on top of whatever
+    login an admin already provisioned for them."""
+
+    serializer_class = MeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_object(self):
+        return self.request.user.profile
+
+
+class ChangePasswordView(APIView):
+    """`POST /api/me/change-password/` — self-service password change for
+    every role. Never touches username/login (that stays admin-managed)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(status=204)
+
+
+class MeAvatarView(APIView):
+    """Streams the current user's own avatar back — deliberately scoped to
+    `request.user` only (never an arbitrary id), so there's no tenant/role
+    check to get wrong (CLAUDE.md §4): a user can only ever read their own
+    file through this endpoint."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        profile = getattr(request.user, "profile", None)
+        if profile is None or not profile.avatar:
+            raise Http404
+        return FileResponse(
+            profile.avatar.open("rb"), content_type="application/octet-stream"
+        )
+
+
+class MeTenantLogoView(APIView):
+    """Streams the logged-in user's own tenant's logo — readable by anyone
+    scoped to that tenant (tenant_admin AND branch_manager, not just
+    whoever is allowed to upload it), same self-scoped-only convention as
+    MeAvatarView above. A superadmin has no single tenant, so this 404s for
+    them — they see the platform logo instead (PlatformLogoView)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        profile = getattr(request.user, "profile", None)
+        tenant = getattr(profile, "tenant", None)
+        if tenant is None or not tenant.logo:
+            raise Http404
+        return FileResponse(tenant.logo.open("rb"), content_type="application/octet-stream")

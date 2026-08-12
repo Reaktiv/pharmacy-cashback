@@ -135,3 +135,34 @@ def rotate_bot_credentials(bot_id: int, old_token: str) -> None:
     deregisters the old token's webhook and refreshes the stored username
     to match the new token's actual bot identity."""
     _rotate_bot_credentials_sync(bot_id, old_token)
+
+
+def _sync_bot_display_name_sync(bot_id: int, new_name: str) -> None:
+    bot_row = BotRow.objects.all_tenants().filter(pk=bot_id, is_active=True).first()
+    if bot_row is None or not bot_row.token_encrypted:
+        return
+
+    async def _set():
+        async with build_client(bot_row) as bot:
+            # Telegram's setMyName caps at 64 chars — Tenant.name allows up
+            # to 255, so truncate rather than let the call fail outright.
+            await bot.set_my_name(name=new_name[:64])
+
+    try:
+        asyncio.run(_set())
+    except TelegramAPIError:
+        # Best-effort: the tenant rename itself already succeeded and is
+        # not rolled back just because Telegram's side of the sync failed
+        # (e.g. bot token revoked) — same "log and move on" posture as the
+        # old-webhook cleanup in rotate_bot_credentials above.
+        logger.info("Could not sync bot display name for bot %s.", bot_id)
+
+
+@shared_task
+def sync_bot_display_name(bot_id: int, new_name: str) -> None:
+    """Fired when a tenant renames their pharmacy (apps/tenants/api_views.py
+    TenantViewSet.perform_update) — pushes the new name to Telegram as the
+    bot's own display name (distinct from Bot.username, the @handle, which
+    only BotFather can change) so customers see the pharmacy's current name
+    in the chat, not whatever it was called when the bot was first added."""
+    _sync_bot_display_name_sync(bot_id, new_name)

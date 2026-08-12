@@ -21,6 +21,89 @@ def test_tenant_admin_can_create_a_branch(api_client_for, make_user, make_tenant
 
 
 @pytest.mark.django_db
+def test_branch_creation_blocked_once_limit_reached(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant = make_tenant("t")
+    tenant.branch_limit = 1
+    tenant.save(update_fields=["branch_limit"])
+    make_branch(tenant, name="Existing Branch")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.post(
+        "/api/branches/", {"name": "Second Branch", "address": "x"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert not Branch.objects.all_tenants().filter(tenant=tenant, name="Second Branch").exists()
+
+
+@pytest.mark.django_db
+def test_branch_creation_unlimited_when_limit_is_null(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant = make_tenant("t")
+    assert tenant.branch_limit is None
+    for i in range(5):
+        make_branch(tenant, name=f"Branch {i}")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.post(
+        "/api/branches/", {"name": "One More Branch", "address": "x"}, format="json"
+    )
+
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_editing_an_existing_branch_is_not_blocked_by_the_limit(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant = make_tenant("t")
+    tenant.branch_limit = 1
+    tenant.save(update_fields=["branch_limit"])
+    branch = make_branch(tenant, name="Only Branch")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.patch(
+        f"/api/branches/{branch.id}/", {"name": "Renamed Branch"}, format="json"
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_only_superadmin_can_set_branch_limit(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"branch_limit": 3}, format="json"
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_superadmin_can_set_branch_limit(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"branch_limit": 3}, format="json"
+    )
+
+    assert response.status_code == 200
+    tenant.refresh_from_db()
+    assert tenant.branch_limit == 3
+
+
+@pytest.mark.django_db
 def test_tenant_admin_only_sees_their_own_branches(
     api_client_for, make_user, make_tenant, make_branch
 ):

@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.accounts.serializers import TenantAwareTokenObtainPairSerializer
 from apps.seller_web.i18n import LANGUAGES, get_language, strings_for
+from apps.tenants.models import GlobalSettings
 
 
 class SellerLoginView(LoginView):
@@ -21,6 +22,15 @@ class SellerLoginView(LoginView):
         context["s"] = strings_for(language)
         context["language"] = language
         context["languages"] = LANGUAGES
+        # Pre-login, no tenant is known yet — this always shows the
+        # product's own brand (superadmin-editable, see MeSerializer.
+        # platform_name), same as the React panel's LoginPage. Read
+        # GlobalSettings directly (same process) rather than round-tripping
+        # through /api/branding/ — Django server-rendering this page can
+        # just do that; the React panel can't, hence its own public fetch.
+        gs = GlobalSettings.load()
+        context["platform_name"] = gs.platform_name
+        context["has_platform_logo"] = bool(gs.platform_logo)
         return context
 
 

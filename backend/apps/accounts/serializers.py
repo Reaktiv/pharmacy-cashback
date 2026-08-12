@@ -1,10 +1,17 @@
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction as db_transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from apps.accounts.models import Branch, Seller, UserProfile
-from apps.tenants.models import Tenant
+from apps.tenants.models import GlobalSettings, Tenant
+
+# Self-service profile picture — deliberately smaller than broadcast media's
+# 10MB image cap (apps.broadcasts.serializers.MAX_IMAGE_BYTES): this is a
+# small avatar, not a promotional image.
+AVATAR_MAX_BYTES = 5 * 1024 * 1024
 
 
 class TenantAwareTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -32,6 +39,20 @@ class BranchSerializer(serializers.ModelSerializer):
         model = Branch
         fields = ["id", "name", "address", "is_active"]
         read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        # Same shape as Tenant.broadcast_quota (apps/broadcasts/api_views.py
+        # _quota_exceeded): superadmin sets a per-tenant cap on total branch
+        # count, null = unlimited. Only checked on create — editing an
+        # existing branch never adds to the count.
+        if self.instance is None:
+            tenant = self.context["request"].user.profile.tenant
+            limit = tenant.branch_limit
+            if limit is not None and Branch.objects.all().count() >= limit:
+                raise serializers.ValidationError(
+                    {"detail": f"Filiallar soni limiti tugagan (limit: {limit})."}
+                )
+        return attrs
 
 
 class SellerSerializer(serializers.ModelSerializer):
@@ -246,3 +267,181 @@ class TenantAdminSerializer(serializers.Serializer):
             instance.user.is_active = is_active
             instance.user.save(update_fields=["is_active"])
         return instance
+
+
+class MeSerializer(serializers.ModelSerializer):
+    """Self-service `GET/PATCH /api/me/` for every internal role (superadmin,
+    tenant admin, branch manager, seller) — an editable layer on top of
+    whichever login the user already has, not a CLAUDE.md domain concern.
+    Role/tenant/branch stay read-only here; that scoping is only ever
+    changed by the admin flows above (TenantAdminSerializer etc.)."""
+
+    username = serializers.CharField(source="user.username", read_only=True)
+    role_display = serializers.CharField(source="get_role_display", read_only=True)
+    tenant_name = serializers.SerializerMethodField()
+    branch_name = serializers.SerializerMethodField()
+    has_avatar = serializers.SerializerMethodField()
+    avatar = serializers.FileField(write_only=True, required=False)
+    remove_avatar = serializers.BooleanField(write_only=True, required=False, default=False)
+    tenant_has_logo = serializers.SerializerMethodField()
+    # Superadmin-only product-wide branding (CLAUDE.md §7c: every
+    # tenant-scoped role sees their own Tenant.name/logo instead, via
+    # tenant_name/tenant_has_logo above — this is the "Pharmacy Cashback"
+    # brand itself). platform_name is deliberately a SerializerMethodField
+    # (read) with its write side handled from self.initial_data in update()
+    # below — it isn't a real UserProfile attribute, so it can't be a plain
+    # model-bound field the way full_name/phone are.
+    platform_name = serializers.SerializerMethodField()
+    platform_has_logo = serializers.SerializerMethodField()
+    platform_logo = serializers.FileField(write_only=True, required=False)
+    remove_platform_logo = serializers.BooleanField(write_only=True, required=False, default=False)
+
+    class Meta:
+        model = UserProfile
+        fields = [
+            "username",
+            "role",
+            "role_display",
+            "tenant_name",
+            "branch_name",
+            "full_name",
+            "phone",
+            "has_avatar",
+            "avatar",
+            "remove_avatar",
+            "tenant_has_logo",
+            "platform_name",
+            "platform_has_logo",
+            "platform_logo",
+            "remove_platform_logo",
+        ]
+        read_only_fields = [
+            "role",
+            "role_display",
+            "tenant_name",
+            "branch_name",
+            "has_avatar",
+            "tenant_has_logo",
+            "platform_has_logo",
+        ]
+
+    def get_tenant_name(self, obj) -> str | None:
+        return obj.tenant.name if obj.tenant_id else None
+
+    def get_branch_name(self, obj) -> str | None:
+        return obj.branch.name if obj.branch_id else None
+
+    def get_has_avatar(self, obj) -> bool:
+        return bool(obj.avatar)
+
+    def get_tenant_has_logo(self, obj) -> bool:
+        return bool(obj.tenant.logo) if obj.tenant_id else False
+
+    def get_platform_name(self, obj) -> str | None:
+        if obj.role != UserProfile.Role.SUPERADMIN:
+            return None
+        return GlobalSettings.load().platform_name
+
+    def get_platform_has_logo(self, obj) -> bool | None:
+        if obj.role != UserProfile.Role.SUPERADMIN:
+            return None
+        return bool(GlobalSettings.load().platform_logo)
+
+    def validate_avatar(self, uploaded_file):
+        content_type = uploaded_file.content_type or ""
+        if not content_type.startswith("image/"):
+            raise serializers.ValidationError("Faqat rasm fayli yuklash mumkin.")
+        if uploaded_file.size > AVATAR_MAX_BYTES:
+            raise serializers.ValidationError(
+                f"Rasm hajmi {AVATAR_MAX_BYTES // (1024 * 1024)}MB dan oshmasligi kerak."
+            )
+        return uploaded_file
+
+    def validate_platform_logo(self, uploaded_file):
+        content_type = uploaded_file.content_type or ""
+        if not content_type.startswith("image/"):
+            raise serializers.ValidationError("Faqat rasm fayli yuklash mumkin.")
+        if uploaded_file.size > AVATAR_MAX_BYTES:
+            raise serializers.ValidationError(
+                f"Rasm hajmi {AVATAR_MAX_BYTES // (1024 * 1024)}MB dan oshmasligi kerak."
+            )
+        return uploaded_file
+
+    def update(self, instance, validated_data):
+        avatar = validated_data.get("avatar", None)
+        remove_avatar = validated_data.get("remove_avatar", False)
+        instance.full_name = validated_data.get("full_name", instance.full_name)
+        instance.phone = validated_data.get("phone", instance.phone)
+        update_fields = ["full_name", "phone"]
+        if remove_avatar and instance.avatar:
+            instance.avatar.delete(save=False)
+            instance.avatar = None
+            update_fields.append("avatar")
+        elif avatar is not None:
+            instance.avatar = avatar
+            update_fields.append("avatar")
+        instance.save(update_fields=update_fields)
+
+        # A seller's full_name/phone are authoritatively read from Seller
+        # elsewhere (SellerSerializer, reports, the Sellers list) — push a
+        # self-service edit back there too so those views don't go stale.
+        seller = getattr(instance.user, "seller_profile", None)
+        if seller is not None and (
+            seller.full_name != instance.full_name or seller.phone != instance.phone
+        ):
+            seller.full_name = instance.full_name
+            seller.phone = instance.phone
+            seller.save(update_fields=["full_name", "phone"])
+
+        if instance.role == UserProfile.Role.SUPERADMIN:
+            gs = GlobalSettings.load()
+            gs_update_fields = []
+            new_platform_name = self.initial_data.get("platform_name")
+            if isinstance(new_platform_name, str) and new_platform_name.strip():
+                new_platform_name = new_platform_name.strip()[:100]
+                if new_platform_name != gs.platform_name:
+                    gs.platform_name = new_platform_name
+                    gs_update_fields.append("platform_name")
+            platform_logo = validated_data.get("platform_logo")
+            remove_platform_logo = validated_data.get("remove_platform_logo", False)
+            if remove_platform_logo and gs.platform_logo:
+                gs.platform_logo.delete(save=False)
+                gs.platform_logo = None
+                gs_update_fields.append("platform_logo")
+            elif platform_logo is not None:
+                gs.platform_logo = platform_logo
+                gs_update_fields.append("platform_logo")
+            if gs_update_fields:
+                gs.save(update_fields=gs_update_fields)
+
+        return instance
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Self-service password change for `POST /api/me/change-password/` —
+    every role (login itself is never editable here, only the password
+    behind it). Django's own AUTH_PASSWORD_VALIDATORS run against
+    new_password, same rules as everywhere else a password is set."""
+
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_old_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Joriy parol noto'g'ri.")
+        return value
+
+    def validate_new_password(self, value):
+        user = self.context["request"].user
+        try:
+            validate_password(value, user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(exc.messages) from exc
+        return value
+
+    def save(self):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return user

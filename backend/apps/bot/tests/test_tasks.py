@@ -4,7 +4,12 @@ from unittest.mock import patch
 import pytest
 from aiogram.exceptions import TelegramAPIError
 
-from apps.bot.tasks import _notify_transaction_sync, _register_webhook_sync, _rotate_bot_credentials_sync
+from apps.bot.tasks import (
+    _notify_transaction_sync,
+    _register_webhook_sync,
+    _rotate_bot_credentials_sync,
+    _sync_bot_display_name_sync,
+)
 from apps.ledger.services import post_earn_transaction
 from apps.tenants.models import Bot
 
@@ -24,6 +29,7 @@ class _FakeAiogramBot:
         self.sent = []
         self.webhooks_set = []
         self.webhook_deleted = False
+        self.names_set = []
         self._username = username
 
     async def __aenter__(self):
@@ -45,6 +51,10 @@ class _FakeAiogramBot:
         from types import SimpleNamespace
 
         return SimpleNamespace(username=self._username)
+
+    async def set_my_name(self, name=None):
+        self.names_set.append(name)
+        return True
 
 
 @pytest.mark.django_db
@@ -197,3 +207,51 @@ def test_rotate_bot_credentials_tolerates_an_already_revoked_old_token(make_tena
 
     bot_row.refresh_from_db()
     assert bot_row.username == "testbot"
+
+
+@pytest.mark.django_db
+def test_sync_bot_display_name_calls_set_my_name(make_tenant):
+    tenant = make_tenant("t")
+    bot_row = _make_bot_row(tenant)
+
+    fake_bot = _FakeAiogramBot()
+    with patch("apps.bot.tasks.build_client", return_value=fake_bot):
+        _sync_bot_display_name_sync(bot_row.pk, "Yangi Dorixona Nomi")
+
+    assert fake_bot.names_set == ["Yangi Dorixona Nomi"]
+
+
+@pytest.mark.django_db
+def test_sync_bot_display_name_truncates_to_64_chars(make_tenant):
+    tenant = make_tenant("t")
+    bot_row = _make_bot_row(tenant)
+    long_name = "A" * 200
+
+    fake_bot = _FakeAiogramBot()
+    with patch("apps.bot.tasks.build_client", return_value=fake_bot):
+        _sync_bot_display_name_sync(bot_row.pk, long_name)
+
+    assert fake_bot.names_set == ["A" * 64]
+
+
+@pytest.mark.django_db
+def test_sync_bot_display_name_is_a_noop_when_the_tenant_has_no_bot(make_tenant):
+    make_tenant("t")  # no Bot row created
+
+    with patch("apps.bot.tasks.build_client") as mock_build:
+        _sync_bot_display_name_sync(999999, "Some Name")  # must not raise
+
+    mock_build.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_sync_bot_display_name_tolerates_telegram_errors(make_tenant):
+    tenant = make_tenant("t")
+    bot_row = _make_bot_row(tenant)
+
+    class _RaisingBot(_FakeAiogramBot):
+        async def set_my_name(self, name=None):
+            raise TelegramAPIError(method=None, message="Unauthorized")
+
+    with patch("apps.bot.tasks.build_client", return_value=_RaisingBot()):
+        _sync_bot_display_name_sync(bot_row.pk, "New Name")  # must not raise

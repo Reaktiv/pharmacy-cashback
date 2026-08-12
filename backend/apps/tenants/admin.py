@@ -12,7 +12,7 @@ class TenantAdmin(admin.ModelAdmin):
     """CLAUDE.md §5: audit rate changes and tenant creation here too — the
     React panel isn't the only way a superadmin can touch these fields."""
 
-    list_display = ("name", "slug", "cashback_rate", "is_active", "created_at")
+    list_display = ("name", "slug", "cashback_rate", "branch_limit", "is_active", "created_at")
     prepopulated_fields = {"slug": ("name",)}
 
     def save_model(self, request, obj, form, change):

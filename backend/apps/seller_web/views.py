@@ -2,8 +2,9 @@ import uuid
 from functools import wraps
 
 from django.contrib import messages
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseRedirect
+from django.http import FileResponse, Http404, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 
@@ -20,7 +21,7 @@ from apps.ledger.services import (
     post_earn_by_phone,
     redeem_via_otp,
 )
-from apps.seller_web.forms import EarnForm, RedeemForm
+from apps.seller_web.forms import EarnForm, ProfileForm, RedeemForm, SellerPasswordChangeForm
 from apps.seller_web.i18n import LANGUAGE_COOKIE, LANGUAGES, get_language, strings_for, t
 
 # Aligned with the session cookie's own lifetime expectations — long enough
@@ -76,6 +77,8 @@ def register(request):
         "earn_form": EarnForm(initial={"idempotency_key": uuid.uuid4().hex}, language=language),
         "redeem_form": RedeemForm(initial={"idempotency_key": uuid.uuid4().hex}, language=language),
         "seller": request.seller,
+        "has_avatar": bool(request.user.profile.avatar),
+        "has_tenant_logo": bool(request.seller.tenant.logo),
         "s": strings_for(language),
         "language": language,
         "languages": LANGUAGES,
@@ -165,3 +168,101 @@ def redeem(request):
         ),
     )
     return redirect("seller_web:register")
+
+
+@seller_required
+def profile(request):
+    """Self-service "who am I" page for the seller-web till (README: sellers
+    use this session-based app, not the JWT React panel, so they get their
+    own small profile page mirroring apps.accounts.api_views.MeView). Name/
+    phone write through to the Seller row — the copy every report and the
+    Sellers list actually read (apps.accounts.signals.sync_profile_with_seller
+    mirrors it back onto UserProfile automatically). Avatar has no Seller
+    column, so it always lives directly on UserProfile."""
+    language = get_language(request)
+    seller = request.seller
+    user_profile = request.user.profile
+
+    if request.method == "POST":
+        form = ProfileForm(request.POST, request.FILES, language=language)
+        if form.is_valid():
+            seller.full_name = form.cleaned_data["full_name"]
+            seller.phone = form.cleaned_data["phone"]
+            seller.save(update_fields=["full_name", "phone"])
+
+            if form.cleaned_data["remove_avatar"] and user_profile.avatar:
+                user_profile.avatar.delete(save=False)
+                user_profile.avatar = None
+                user_profile.save(update_fields=["avatar"])
+            elif form.cleaned_data["avatar"] is not None:
+                user_profile.avatar = form.cleaned_data["avatar"]
+                user_profile.save(update_fields=["avatar"])
+
+            messages.success(request, t(language, "profile_saved"))
+            # Same "back to the main page" behavior as the React admin
+            # panel's profile drawer after a successful save.
+            return redirect("seller_web:register")
+        messages.error(request, t(language, "profile_form_invalid"))
+    else:
+        form = ProfileForm(
+            initial={"full_name": seller.full_name, "phone": seller.phone},
+            language=language,
+        )
+
+    context = {
+        "form": form,
+        "password_form": SellerPasswordChangeForm(request.user, language=language),
+        "seller": seller,
+        "has_avatar": bool(user_profile.avatar),
+        "has_tenant_logo": bool(seller.tenant.logo),
+        "s": strings_for(language),
+        "language": language,
+        "languages": LANGUAGES,
+    }
+    return render(request, "seller_web/profile.html", context)
+
+
+@seller_required
+def change_password(request):
+    """Old/new/confirm password flow — login itself stays admin-managed,
+    only the password behind it is self-service (matches
+    apps.accounts.api_views.ChangePasswordView for the React panel roles)."""
+    language = get_language(request)
+    if request.method == "POST":
+        form = SellerPasswordChangeForm(request.user, request.POST, language=language)
+        if form.is_valid():
+            user = form.save()
+            # Django's session auth hash is derived from the password —
+            # without this, changing your own password logs you out
+            # mid-session.
+            update_session_auth_hash(request, user)
+            messages.success(request, t(language, "password_changed"))
+        else:
+            messages.error(request, t(language, "password_change_error"))
+    return redirect("seller_web:profile")
+
+
+@seller_required
+def avatar(request):
+    """Streams the logged-in seller's own avatar — scoped to request.user
+    only (never an arbitrary id), same convention as
+    apps.accounts.api_views.MeAvatarView (CLAUDE.md §4: no tenant/role check
+    to get wrong when the query can only ever be "my own file")."""
+    user_profile = request.user.profile
+    if not user_profile.avatar:
+        raise Http404
+    return FileResponse(user_profile.avatar.open("rb"), content_type="application/octet-stream")
+
+
+@seller_required
+def tenant_logo(request):
+    """Streams the seller's own tenant's logo — same self-scoped-only
+    convention as avatar() above and apps.accounts.api_views.
+    MeTenantLogoView (the React-panel equivalent for tenant_admin/
+    branch_manager). Lets the till page show the pharmacy's own branding
+    instead of the generic product logo (CLAUDE.md-adjacent — every screen
+    a tenant's own people see should read as "their" pharmacy)."""
+    tenant = request.seller.tenant
+    if not tenant.logo:
+        raise Http404
+    return FileResponse(tenant.logo.open("rb"), content_type="application/octet-stream")

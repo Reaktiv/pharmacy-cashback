@@ -1,6 +1,9 @@
 from django.db import transaction as db_transaction
-from rest_framework import generics, viewsets
+from django.http import FileResponse, Http404
+from rest_framework import generics, permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.models import UserProfile
 from apps.accounts.permissions import IsSuperadmin, IsTenantAdmin
@@ -39,7 +42,25 @@ class TenantViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         old_rate = serializer.instance.cashback_rate
         old_quota = serializer.instance.broadcast_quota
+        old_branch_limit = serializer.instance.branch_limit
+        old_name = serializer.instance.name
         tenant = serializer.save()
+        if tenant.name != old_name:
+            log_action(
+                tenant=tenant,
+                actor=self.request.user,
+                action="tenant_renamed",
+                target_type="Tenant",
+                target_id=tenant.id,
+                metadata={"old_name": old_name, "new_name": tenant.name},
+            )
+            bot = Bot.objects.all_tenants().filter(tenant=tenant, is_active=True).first()
+            if bot is not None:
+                from apps.bot.tasks import sync_bot_display_name
+
+                db_transaction.on_commit(
+                    lambda: sync_bot_display_name.delay(bot.id, tenant.name)
+                )
         if tenant.cashback_rate != old_rate:
             log_action(
                 tenant=tenant,
@@ -57,6 +78,15 @@ class TenantViewSet(viewsets.ModelViewSet):
                 target_type="Tenant",
                 target_id=tenant.id,
                 metadata={"old_quota": old_quota, "new_quota": tenant.broadcast_quota},
+            )
+        if tenant.branch_limit != old_branch_limit:
+            log_action(
+                tenant=tenant,
+                actor=self.request.user,
+                action="branch_limit_changed",
+                target_type="Tenant",
+                target_id=tenant.id,
+                metadata={"old_limit": old_branch_limit, "new_limit": tenant.branch_limit},
             )
 
     def perform_destroy(self, instance):
@@ -121,6 +151,33 @@ class GlobalSettingsView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return GlobalSettings.load()
+
+
+class PlatformBrandingView(APIView):
+    """`GET /api/branding/` — deliberately public (no auth): the login
+    screen (React and seller-web/accounts) needs the current product name
+    before anyone has signed in, since that's the only branding shown
+    pre-auth (a tenant isn't known yet at that point — see
+    apps.accounts.serializers.MeSerializer's platform_name docstring)."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        gs = GlobalSettings.load()
+        return Response({"name": gs.platform_name, "has_logo": bool(gs.platform_logo)})
+
+
+class PlatformLogoView(APIView):
+    """`GET /api/branding/logo/` — public for the same reason as
+    PlatformBrandingView above. Just an image; nothing sensitive."""
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        gs = GlobalSettings.load()
+        if not gs.platform_logo:
+            raise Http404
+        return FileResponse(gs.platform_logo.open("rb"), content_type="application/octet-stream")
 
 
 class BotViewSet(viewsets.ModelViewSet):

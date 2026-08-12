@@ -44,6 +44,8 @@
     box-shadow: var(--shadow-sm);
   }
   .brand-mark svg { width: 58%; height: 58%; }
+  .brand-mark-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+  .brand-mark.has-image { background: #fff; }
   .seller-name { margin: 0.2rem 0 0; color: var(--text-muted); font-size: 0.85rem; font-weight: 600; }
   .top-bar-actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
 
@@ -81,12 +83,12 @@
   label { display: block; margin-top: 1rem; font-size: 0.82rem; font-weight: 700; color: var(--text-muted); }
   label:first-of-type { margin-top: 1.1rem; }
 
-  input[type=text], input[type=number] {
+  input[type=text], input[type=number], input[type=password] {
     width: 100%; font: inherit; font-size: 1.55rem; font-weight: 700; padding: 0.65rem 0.8rem; margin-top: 0.35rem;
     border: 1.5px solid var(--border); border-radius: var(--r-sm); background: var(--surface-sunken);
     color: var(--text); box-sizing: border-box; transition: border-color .15s var(--ease), box-shadow .15s var(--ease), background .15s var(--ease);
   }
-  input[type=text]:focus, input[type=number]:focus {
+  input[type=text]:focus, input[type=number]:focus, input[type=password]:focus {
     outline: none; border-color: var(--primary-500); box-shadow: 0 0 0 4px var(--primary-100); background: var(--surface);
   }
   fieldset.redeem input[type=text]:focus, fieldset.redeem input[type=number]:focus {
@@ -188,6 +190,50 @@
   }
   .language-switcher button:hover { background: var(--surface-sunken); box-shadow: none; transform: none; }
   .language-switcher button.active { background: var(--primary-50); color: var(--primary-700); border-color: var(--primary-100); }
+
+  .profile-chip {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.32rem 0.9rem 0.32rem 0.32rem; border-radius: var(--r-full);
+    background: var(--surface); border: 1.5px solid var(--border);
+    color: var(--text); font-weight: 750; font-size: 0.85rem; text-decoration: none;
+    transition: border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease), box-shadow .15s var(--ease);
+  }
+  .profile-chip:hover { background: var(--surface-sunken); border-color: var(--primary-300); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
+  .profile-chip-avatar {
+    width: 28px; height: 28px; border-radius: var(--r-full); overflow: hidden; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--primary-500), var(--teal-500));
+    color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 0.68rem;
+  }
+  .profile-chip-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+  .profile-avatar-picker { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+  .profile-avatar-preview {
+    width: 72px; height: 72px; border-radius: var(--r-full); flex-shrink: 0; overflow: hidden;
+    background: linear-gradient(135deg, var(--primary-500), var(--teal-500));
+    color: #fff; display: grid; place-items: center; font-weight: 800; font-size: 1.3rem;
+  }
+  .profile-avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
+  .profile-avatar-preview.has-image { background: #fff; }
+  .profile-avatar-actions { display: flex; flex-direction: column; gap: 0.4rem; align-items: flex-start; }
+  .profile-avatar-actions label {
+    margin: 0; font-weight: 700; font-size: 0.85rem; color: var(--primary-700); cursor: pointer;
+  }
+  .profile-avatar-actions .remove-link {
+    margin: 0; font-weight: 700; font-size: 0.85rem; color: var(--danger); cursor: pointer;
+    background: none; border: none; padding: 0; display: flex; align-items: center;
+  }
+  #id_avatar { display: none; }
+
+  .profile-readonly-field {
+    margin-top: 1rem; padding: 0.65rem 0.8rem; background: var(--surface-sunken);
+    border-radius: var(--r-sm); font-weight: 700; font-size: 0.95rem; color: var(--text-muted);
+  }
+  .profile-readonly-field:first-of-type { margin-top: 1.1rem; }
+
+  fieldset.password { border-top-color: var(--danger); }
+  fieldset.password legend { color: var(--danger); }
+  fieldset.password legend .legend-icon { background: var(--danger-bg); color: var(--danger); }
+  fieldset.password button { background: linear-gradient(135deg, var(--danger), #9f1239); }
 </style>
 </head>
 <body>

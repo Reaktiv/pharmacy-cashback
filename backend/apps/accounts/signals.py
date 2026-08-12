@@ -32,8 +32,16 @@ def sync_profile_with_seller(sender, instance, **kwargs):
     actually needs, which UserProfile.role alone can't supply — so
     provisioning always flows this direction: creating or re-branching a
     Seller is what makes its linked profile a seller, not the reverse.
+
+    full_name/phone are also mirrored onto the profile here (whether the
+    Seller was just edited by a branch manager via SellerSerializer, or by
+    the seller themselves via MeSerializer.update, which writes to Seller
+    first) — keeping both readable from the one place a self-service
+    profile page always checks (UserProfile), without making Seller stop
+    being the copy every report/listing actually queries.
     """
     profile = instance.user.profile
+    update_fields = []
     if (
         profile.role != UserProfile.Role.SELLER
         or profile.tenant_id != instance.tenant_id
@@ -42,4 +50,10 @@ def sync_profile_with_seller(sender, instance, **kwargs):
         profile.role = UserProfile.Role.SELLER
         profile.tenant = instance.tenant
         profile.branch = instance.branch
-        profile.save(update_fields=["role", "tenant", "branch"])
+        update_fields += ["role", "tenant", "branch"]
+    if profile.full_name != instance.full_name or profile.phone != instance.phone:
+        profile.full_name = instance.full_name
+        profile.phone = instance.phone
+        update_fields += ["full_name", "phone"]
+    if update_fields:
+        profile.save(update_fields=update_fields)

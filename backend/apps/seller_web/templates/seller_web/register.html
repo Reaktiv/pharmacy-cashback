@@ -2,10 +2,14 @@
 {% block body %}
 <div class="top-bar">
   <div class="brand">
-    <span class="brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 4v6.5M12 13.5V20M4 12h6.5M13.5 12H20" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
-      </svg>
+    <span class="brand-mark{% if has_tenant_logo %} has-image{% endif %}" aria-hidden="true">
+      {% if has_tenant_logo %}
+        <img src="{% url 'seller_web:tenant_logo' %}" alt="" class="brand-mark-img">
+      {% else %}
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 4v6.5M12 13.5V20M4 12h6.5M13.5 12H20" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
+        </svg>
+      {% endif %}
     </span>
     <div>
       <h1>{{ seller.branch.tenant.name }} — {{ seller.branch.name }}</h1>
@@ -13,7 +17,16 @@
     </div>
   </div>
   <div class="top-bar-actions">
-    {% include "seller_web/_language_switcher.html" %}
+    <a href="{% url 'seller_web:profile' %}" class="profile-chip">
+      <span class="profile-chip-avatar">
+        {% if has_avatar %}
+          <img src="{% url 'seller_web:profile_avatar' %}" alt="">
+        {% else %}
+          {{ seller.full_name|slice:":2"|upper }}
+        {% endif %}
+      </span>
+      {{ s.profile_link }}
+    </a>
     <form method="post" action="{% url 'accounts:logout' %}" data-confirm-logout>
       {% csrf_token %}
       <button type="submit" class="secondary danger">{{ s.logout }}</button>
