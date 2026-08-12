@@ -1,4 +1,12 @@
-export type Role = 'superadmin' | 'tenant_admin' | 'branch_manager' | 'seller'
+// 'unassigned' is UserProfile.Role.UNASSIGNED's real value (apps/accounts/
+// models.py) — the default for any freshly created login (e.g. `manage.py
+// createsuperuser`, which sets Django's own is_superuser flag but never
+// touches this app-level role) until an admin explicitly assigns one. A
+// user can legitimately reach the panel in this state, so it has to be a
+// real case here rather than something every Role-keyed lookup can assume
+// away — see RoleRedirect.tsx's "no panel for this role" screen and
+// lib/labels.ts's ROLE_KEYS.
+export type Role = 'superadmin' | 'tenant_admin' | 'branch_manager' | 'seller' | 'unassigned'
 
 export interface Tenant {
   id: number
@@ -11,6 +19,9 @@ export interface Tenant {
   default_daily_txn_limit: number | null
   broadcast_quota: number | null
   broadcasts_sent_this_month: number
+  branch_limit: number | null
+  branches_count: number
+  has_logo: boolean
   created_at: string
 }
 
@@ -150,6 +161,27 @@ export interface SellerTransactionRow {
   type: 'earn' | 'spend' | 'reversal'
   status: 'active' | 'reversed'
   flagged: boolean
+}
+
+export interface MeProfile {
+  username: string
+  role: Role
+  role_display: string
+  tenant_name: string | null
+  branch_name: string | null
+  full_name: string
+  phone: string
+  has_avatar: boolean
+  tenant_has_logo: boolean
+  // Only meaningful (non-null) for role === 'superadmin' — the product-wide
+  // brand every other role sees replaced by their own tenant's name/logo.
+  platform_name: string | null
+  platform_has_logo: boolean | null
+}
+
+export interface PlatformBranding {
+  name: string
+  has_logo: boolean
 }
 
 export interface Paginated<T> {

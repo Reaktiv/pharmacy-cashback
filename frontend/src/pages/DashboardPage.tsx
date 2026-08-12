@@ -7,9 +7,10 @@ import { useLanguage } from '../lib/i18n'
 import StatCard from '../components/StatCard'
 import EmptyState from '../components/EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
+import DetailDrawer from '../components/DetailDrawer'
 import { IconAlertCircle, IconBuilding, IconUsers, IconReceipt, IconWallet, IconPlus, IconClipboardEmpty } from '../components/Icons'
 
-function NewTenantForm() {
+function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const [name, setName] = useState('')
@@ -36,14 +37,14 @@ function NewTenantForm() {
   }
 
   return (
-    <form onSubmit={handleCreate}>
-      {error && (
-        <div className="error-banner">
-          <IconAlertCircle />
-          <span>{error}</span>
-        </div>
-      )}
-      <div className="form-grid">
+    <DetailDrawer open={open} title={t('dashboard_add_new_tenant_heading')} onClose={onClose}>
+      <form onSubmit={handleCreate}>
+        {error && (
+          <div className="error-banner">
+            <IconAlertCircle />
+            <span>{error}</span>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="tenant-name">{t('field_tenant_name')}</label>
           <input id="tenant-name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -65,12 +66,12 @@ function NewTenantForm() {
           />
           <p className="hint">{t('hint_rate_format', { ten: 10, zeroTen: '0.10' })}</p>
         </div>
-      </div>
-      <button type="submit" disabled={submitting}>
-        <IconPlus />
-        {submitting ? t('dashboard_creating') : t('dashboard_add_tenant_button')}
-      </button>
-    </form>
+        <button type="submit" disabled={submitting}>
+          <IconPlus />
+          {submitting ? t('dashboard_creating') : t('dashboard_add_tenant_button')}
+        </button>
+      </form>
+    </DetailDrawer>
   )
 }
 
@@ -79,6 +80,7 @@ export default function DashboardPage() {
   const { t, language } = useLanguage()
   const [rows, setRows] = useState<CrossTenantDashboardRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [addOpen, setAddOpen] = useState(false)
 
   useEffect(() => {
     apiFetch<CrossTenantDashboardRow[]>('/api/reports/cross-tenant/')
@@ -146,6 +148,10 @@ export default function DashboardPage() {
           <h2>{t('dashboard_all_tenants_heading')}</h2>
           <p>{t('dashboard_all_tenants_hint')}</p>
         </div>
+        <button type="button" onClick={() => setAddOpen(true)}>
+          <IconPlus />
+          {t('dashboard_add_tenant_button')}
+        </button>
       </div>
 
       <div className="table-card">
@@ -189,15 +195,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <div className="section-head">
-        <div>
-          <h2>{t('dashboard_add_new_tenant_heading')}</h2>
-          <p>{t('dashboard_add_new_tenant_hint')}</p>
-        </div>
-      </div>
-      <div className="panel">
-        <NewTenantForm />
-      </div>
+      <NewTenantDrawer open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   )
 }

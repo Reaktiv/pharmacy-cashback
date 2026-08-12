@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { apiFetch, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { Branch, BranchManager, Tenant } from '../api/types'
@@ -8,87 +8,19 @@ import EmptyState from '../components/EmptyState'
 import { SkeletonTable } from '../components/Skeleton'
 import ConfirmDialog, { DoubleConfirmDialog } from '../components/ConfirmDialog'
 import DetailDrawer, { DrawerField } from '../components/DetailDrawer'
-import {
-  IconAlertCircle,
-  IconCheckCircle,
-  IconPlus,
-  IconBuilding,
-  IconUsers,
-  IconClipboardEmpty,
-  IconTrash,
-} from '../components/Icons'
+import SellersList from '../components/SellersList'
+import { IconAlertCircle, IconBuilding, IconUsers, IconClipboardEmpty, IconTrash } from '../components/Icons'
 
 function asArray<T>(data: T[] | { results: T[] }): T[] {
   return Array.isArray(data) ? data : data.results
 }
 
-function useAutoDismiss(flag: boolean, onDone: () => void, ms = 3200) {
-  useEffect(() => {
-    if (!flag) return
-    const timer = setTimeout(onDone, ms)
-    return () => clearTimeout(timer)
-  }, [flag, onDone, ms])
-}
-
-function RateForm({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant) => void }) {
-  const { t } = useLanguage()
-  const [rate, setRate] = useState(tenant.cashback_rate)
-  const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  useAutoDismiss(saved, () => setSaved(false))
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault()
-    setError(null)
-    setSaved(false)
-    setSubmitting(true)
-    try {
-      const updated = await apiFetch<Tenant>(`/api/tenants/${tenant.id}/`, {
-        method: 'PATCH',
-        body: JSON.stringify({ cashback_rate: rate }),
-      })
-      onSaved(updated)
-      setSaved(true)
-    } catch (err) {
-      setError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_rate_update_error'))
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit}>
-      {error && (
-        <div className="error-banner">
-          <IconAlertCircle />
-          <span>{error}</span>
-        </div>
-      )}
-      {saved && (
-        <div className="toast">
-          <IconCheckCircle />
-          {t('tenant_admin_rate_updated_toast')}
-        </div>
-      )}
-      <div className="field">
-        <label htmlFor="rate">{t('field_cashback_rate')}</label>
-        <input id="rate" type="number" step="0.01" min="0" value={rate} onChange={(e) => setRate(e.target.value)} />
-        <p className="hint">{t('hint_rate_format', { ten: 10, zeroTen: '0.10' })}</p>
-      </div>
-      <button type="submit" disabled={submitting}>
-        {submitting ? t('saving') : t('tenant_admin_save_rate_button')}
-      </button>
-    </form>
-  )
-}
-
-function BranchesSection() {
+/** Read-only branches list — creating a branch now lives on the Sozlamalar
+ * (Settings) page (TenantSettingsPage's AddBranchForm), this section is
+ * just for oversight + deactivating/deleting an existing one. */
+function BranchesSection({ branchLimit }: { branchLimit: number | null }) {
   const { t, language } = useLanguage()
   const [branches, setBranches] = useState<Branch[] | null>(null)
-  const [name, setName] = useState('')
-  const [address, setAddress] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
   const [selected, setSelected] = useState<Branch | null>(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
@@ -96,28 +28,10 @@ function BranchesSection() {
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const load = () => {
-    apiFetch<Branch[] | { results: Branch[] }>('/api/branches/').then((data) =>
-      setBranches(Array.isArray(data) ? data : data.results)
-    )
+    apiFetch<Branch[] | { results: Branch[] }>('/api/branches/').then((data) => setBranches(asArray(data)))
   }
 
   useEffect(load, [])
-
-  const handleCreate = async (event: FormEvent) => {
-    event.preventDefault()
-    setError(null)
-    try {
-      await apiFetch('/api/branches/', {
-        method: 'POST',
-        body: JSON.stringify({ name, address }),
-      })
-      setName('')
-      setAddress('')
-      load()
-    } catch (err) {
-      setError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_branch_create_error'))
-    }
-  }
 
   const handleDelete = async () => {
     if (!selected) return
@@ -139,6 +53,12 @@ function BranchesSection() {
 
   return (
     <div>
+      <p className="text-muted" style={{ marginTop: 0 }}>
+        {t('tenant_branch_limit_usage', {
+          used: branches.length,
+          limit: branchLimit === null ? '∞' : branchLimit,
+        })}
+      </p>
       <div className="table-card">
         {branches.length === 0 ? (
           <EmptyState
@@ -173,29 +93,6 @@ function BranchesSection() {
           </div>
         )}
       </div>
-
-      <form onSubmit={handleCreate} style={{ marginTop: '1rem' }}>
-        {error && (
-          <div className="error-banner">
-            <IconAlertCircle />
-            <span>{error}</span>
-          </div>
-        )}
-        <div className="form-grid" style={{ alignItems: 'flex-end' }}>
-          <div className="field">
-            <label htmlFor="branch-name">{t('field_new_branch_name')}</label>
-            <input id="branch-name" value={name} onChange={(e) => setName(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label htmlFor="branch-address">{t('field_address')}</label>
-            <input id="branch-address" value={address} onChange={(e) => setAddress(e.target.value)} />
-          </div>
-        </div>
-        <button type="submit">
-          <IconPlus />
-          {t('tenant_admin_add_branch_button')}
-        </button>
-      </form>
 
       <DetailDrawer
         open={!!selected}
@@ -261,14 +158,11 @@ function BranchesSection() {
   )
 }
 
+/** Read-only branch admins list — assigning a new one now lives on the
+ * Sozlamalar page (TenantSettingsPage's AddBranchManagerForm). */
 function BranchManagersSection() {
   const { t, language } = useLanguage()
   const [managers, setManagers] = useState<BranchManager[] | null>(null)
-  const [branches, setBranches] = useState<Branch[] | null>(null)
-  const [branchId, setBranchId] = useState('')
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
   const [selected, setSelected] = useState<BranchManager | null>(null)
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
@@ -280,6 +174,8 @@ function BranchManagersSection() {
       setManagers(asArray(data))
     )
   }
+
+  useEffect(loadManagers, [])
 
   const handleDelete = async () => {
     if (!selected) return
@@ -294,27 +190,6 @@ function BranchManagersSection() {
       setDeleteError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_manager_delete_error'))
     } finally {
       setDeleting(false)
-    }
-  }
-
-  useEffect(() => {
-    loadManagers()
-    apiFetch<Branch[] | { results: Branch[] }>('/api/branches/').then((data) => setBranches(asArray(data)))
-  }, [])
-
-  const handleCreate = async (event: FormEvent) => {
-    event.preventDefault()
-    setError(null)
-    try {
-      await apiFetch('/api/branch-managers/', {
-        method: 'POST',
-        body: JSON.stringify({ branch: Number(branchId), username, password }),
-      })
-      setUsername('')
-      setPassword('')
-      loadManagers()
-    } catch (err) {
-      setError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_manager_create_error'))
     }
   }
 
@@ -352,48 +227,6 @@ function BranchManagersSection() {
           </div>
         )}
       </div>
-
-      <form onSubmit={handleCreate} style={{ marginTop: '1rem' }}>
-        {error && (
-          <div className="error-banner">
-            <IconAlertCircle />
-            <span>{error}</span>
-          </div>
-        )}
-        <div className="form-grid" style={{ alignItems: 'flex-end' }}>
-          <div className="field">
-            <label htmlFor="manager-branch">{t('field_branch')}</label>
-            <select id="manager-branch" value={branchId} onChange={(e) => setBranchId(e.target.value)} required>
-              <option value="" disabled>
-                {t('field_branch_select_placeholder')}
-              </option>
-              {(branches ?? []).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="manager-username">{t('field_login')}</label>
-            <input id="manager-username" value={username} onChange={(e) => setUsername(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label htmlFor="manager-password">{t('field_password')}</label>
-            <input
-              id="manager-password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
-        </div>
-        <button type="submit" disabled={!branchId}>
-          <IconPlus />
-          {t('tenant_admin_add_manager_button')}
-        </button>
-      </form>
 
       <DetailDrawer
         open={!!selected}
@@ -451,6 +284,10 @@ function BranchManagersSection() {
   )
 }
 
+/** The tenant admin's "Dorixona" overview: branches, branch admins, and
+ * sellers, all read-only listings with drill-in drawers for oversight —
+ * renaming the pharmacy, setting the rate, adding branches/admins all
+ * moved to the separate Sozlamalar page (TenantSettingsPage). */
 export default function TenantAdminPage() {
   const { user } = useAuth()
   const { t } = useLanguage()
@@ -479,31 +316,12 @@ export default function TenantAdminPage() {
       <span className="eyebrow">{t('eyebrow_tenant')}</span>
       <h2 style={{ marginBottom: '1.5rem' }}>{tenant.name}</h2>
 
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_rate_card_heading')}</h3>
-        </div>
-        <RateForm tenant={tenant} onSaved={setTenant} />
-      </div>
-
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_quota_card_heading')}</h3>
-        </div>
-        <p style={{ marginTop: 0, marginBottom: 0 }}>
-          {t('tenant_detail_quota_usage', {
-            used: tenant.broadcasts_sent_this_month,
-            quota: tenant.broadcast_quota === null ? '∞' : tenant.broadcast_quota,
-          })}
-        </p>
-      </div>
-
-      <div className="section-head">
+      <div className="section-head" style={{ marginTop: 0 }}>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <IconBuilding /> {t('label_branches')}
         </h2>
       </div>
-      <BranchesSection />
+      <BranchesSection branchLimit={tenant.branch_limit} />
 
       <div className="section-head">
         <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -511,6 +329,13 @@ export default function TenantAdminPage() {
         </h2>
       </div>
       <BranchManagersSection />
+
+      <div className="section-head">
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <IconUsers /> {t('sellers_heading')}
+        </h2>
+      </div>
+      <SellersList canManage={false} />
     </div>
   )
 }

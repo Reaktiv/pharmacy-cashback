@@ -292,6 +292,94 @@ function BroadcastQuotaSection({
   )
 }
 
+function BranchLimitSection({
+  tenantId,
+  limit,
+  branchesCount,
+  onSaved,
+}: {
+  tenantId: number
+  limit: number | null
+  branchesCount: number
+  onSaved: (t: Tenant) => void
+}) {
+  const { t } = useLanguage()
+  const [value, setValue] = useState(limit === null ? '' : String(limit))
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!saved) return
+    const timer = setTimeout(() => setSaved(false), 3200)
+    return () => clearTimeout(timer)
+  }, [saved])
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    setSubmitting(true)
+    try {
+      const updated = await apiFetch<Tenant>(`/api/tenants/${tenantId}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          branch_limit: value.trim() === '' ? null : Number(value),
+        }),
+      })
+      onSaved(updated)
+      setSaved(true)
+    } catch (err) {
+      setError(
+        extractFieldError(err, 'branch_limit') ??
+          (err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_branch_limit_save_error')),
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div>
+      {error && (
+        <div className="error-banner">
+          <IconAlertCircle />
+          <span>{error}</span>
+        </div>
+      )}
+      {saved && (
+        <div className="toast">
+          <IconCheckCircle />
+          {t('tenant_detail_saved_toast')}
+        </div>
+      )}
+      <p style={{ marginTop: 0 }}>
+        {t('tenant_branch_limit_usage', {
+          used: branchesCount,
+          limit: limit === null ? '∞' : limit,
+        })}
+      </p>
+      <form onSubmit={handleSubmit}>
+        <div className="field wide">
+          <label htmlFor="branch-limit">{t('field_branch_limit')}</label>
+          <input
+            id="branch-limit"
+            type="number"
+            min={0}
+            step={1}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={t('unlimited')}
+          />
+          <p className="hint">{t('field_branch_limit_hint')}</p>
+        </div>
+        <button type="submit" disabled={submitting}>
+          {submitting ? t('saving') : t('save')}
+        </button>
+      </form>
+    </div>
+  )
+}
+
 function TenantAdminsSection({ tenantId }: { tenantId: number }) {
   const { t, language } = useLanguage()
   const [admins, setAdmins] = useState<TenantAdmin[] | null>(null)
@@ -594,6 +682,20 @@ export default function TenantDetailPage() {
           tenantId={tenant.id}
           quota={tenant.broadcast_quota}
           sentThisMonth={tenant.broadcasts_sent_this_month}
+          onSaved={setTenant}
+        />
+      </div>
+
+      <div className="card">
+        <div className="card-title-row">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <IconBuilding /> {t('tenant_detail_branch_limit_card_heading')}
+          </h3>
+        </div>
+        <BranchLimitSection
+          tenantId={tenant.id}
+          limit={tenant.branch_limit}
+          branchesCount={tenant.branches_count}
           onSaved={setTenant}
         />
       </div>

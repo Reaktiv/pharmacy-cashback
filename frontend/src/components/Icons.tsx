@@ -46,6 +46,15 @@ export function IconUsers({ className }: IconProps) {
   )
 }
 
+export function IconUser({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 20c1.5-4 5-6 7.5-6s6 2 7.5 6" />
+    </svg>
+  )
+}
+
 export function IconMegaphone({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden="true">
@@ -278,6 +287,14 @@ export function IconUploadCloud({ className }: IconProps) {
   )
 }
 
+export function IconMenu({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden="true">
+      <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+    </svg>
+  )
+}
+
 export function IconX({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden="true">
@@ -369,6 +386,17 @@ export function IconCrossShield({ className }: IconProps) {
         strokeWidth="2.2"
       />
       <path d="M32 22v20M22 32h20" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function IconSettings({ className }: IconProps) {
+  return (
+    <svg {...base} className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="2.8" />
+      <path
+        d="M19.4 14.5a1.6 1.6 0 0 0 .3 1.75l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.06-.06a1.6 1.6 0 0 0-1.75-.3 1.6 1.6 0 0 0-1 1.46V20.3a1.9 1.9 0 0 1-3.8 0v-.1a1.6 1.6 0 0 0-1.05-1.42 1.6 1.6 0 0 0-1.75.3l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .3-1.75 1.6 1.6 0 0 0-1.46-1H3.7a1.9 1.9 0 0 1 0-3.8h.1A1.6 1.6 0 0 0 5.2 8.5a1.6 1.6 0 0 0-.3-1.75l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.75.3H9.4a1.6 1.6 0 0 0 1-1.46V2.7a1.9 1.9 0 0 1 3.8 0v.1a1.6 1.6 0 0 0 1 1.46 1.6 1.6 0 0 0 1.75-.3l.06-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.3 1.75V8.5a1.6 1.6 0 0 0 1.46 1h.1a1.9 1.9 0 0 1 0 3.8h-.1a1.6 1.6 0 0 0-1.46 1z"
+      />
     </svg>
   )
 }

@@ -254,6 +254,10 @@ a:hover {
   min-height: 100svh;
 }
 
+.sidebar-backdrop {
+  display: none;
+}
+
 .sidebar {
   width: 264px;
   flex-shrink: 0;
@@ -266,10 +270,113 @@ a:hover {
   top: 0;
   height: 100svh;
   overflow-y: auto;
+  overflow-x: hidden;
+  transition:
+    width 0.2s var(--ease),
+    padding 0.2s var(--ease);
+}
+
+.sidebar.closed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-right: none;
+}
+
+.sidebar.closed > * {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .sidebar-brand {
   padding: 0.4rem 0.6rem 1.4rem;
+  min-width: 0;
+}
+
+.sidebar-profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.6rem 0.5rem 1.4rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: center;
+}
+
+.sidebar-profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-full);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--primary-500), var(--teal-500));
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.3rem;
+}
+
+.sidebar-profile-avatar.has-image {
+  background: #fff;
+}
+
+.sidebar-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sidebar-profile-name {
+  font-weight: 750;
+  font-size: 0.95rem;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-profile-role {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.hamburger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.hamburger-btn:hover {
+  background: var(--gray-50);
+  transform: none;
+  box-shadow: none;
+}
+
+.hamburger-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.app-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+  flex: 1;
 }
 
 .sidebar-nav {
@@ -277,6 +384,7 @@ a:hover {
   flex-direction: column;
   gap: 0.2rem;
   flex: 1;
+  white-space: nowrap;
 }
 
 .nav-group-label {
@@ -326,20 +434,6 @@ a:hover {
   opacity: 1;
 }
 
-.sidebar-footer {
-  border-top: 1px solid var(--border-soft);
-  padding-top: 0.9rem;
-  margin-top: 0.6rem;
-}
-
-.sidebar-footer .field label {
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: 0.35rem;
-}
-
 .language-switcher {
   display: flex;
   gap: 0.3rem;
@@ -369,49 +463,16 @@ a:hover {
   border-color: var(--primary-300);
 }
 
-.user-card {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.55rem;
-  border-radius: var(--r-md);
-}
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--r-sm);
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--primary-500), var(--teal-500));
-  color: #fff;
-  font-weight: 800;
-  font-size: 0.85rem;
-}
-
-.user-meta {
-  min-width: 0;
-  flex: 1;
-}
-
-.user-meta .name {
-  font-weight: 700;
-  font-size: 0.85rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.user-meta .role {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  font-weight: 600;
+.sidebar-profile-btn {
+  width: 100%;
+  justify-content: flex-start;
+  margin-top: 1rem;
 }
 
 .sidebar-logout {
   width: 100%;
-  margin-top: 0.4rem;
+  justify-content: flex-start;
+  margin-top: 0.3rem;
 }
 
 .app-main {
@@ -437,6 +498,10 @@ a:hover {
 
 .app-topbar h1 {
   font-size: 1.2rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .app-content {
@@ -1196,7 +1261,12 @@ tr.expanded-row:hover td {
 
 @media (max-width: 900px) {
   .broadcast-composer {
-    grid-template-columns: 1fr;
+    /* A bare `1fr` track still has an implied min size of `auto` (its
+       content's min-content width) — same trap as flex's default
+       `min-width: auto`. Without minmax(0, ...) here, a wide child (the
+       toolbar, the Telegram preview bubble) pushes this single column, and
+       the whole page, wider than the phone viewport. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1361,6 +1431,7 @@ tr.expanded-row:hover td {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  min-width: 0;
 }
 
 .brand-mark {
@@ -1374,9 +1445,22 @@ tr.expanded-row:hover td {
   box-shadow: var(--shadow-sm);
 }
 
+/* Uploaded logos are often transparent-background PNGs — the gradient
+   fallback (for the default SVG mark) would otherwise show through. */
+.brand-mark.has-image {
+  background: #fff;
+}
+
 .brand-mark svg {
   width: 62%;
   height: 62%;
+}
+
+.brand-mark-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
 }
 
 .brand-name {
@@ -1385,7 +1469,8 @@ tr.expanded-row:hover td {
   line-height: 1.15;
   letter-spacing: -0.01em;
   color: var(--text);
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .brand-name small {
@@ -1461,7 +1546,9 @@ tr.expanded-row:hover td {
   align-items: center;
   justify-content: center;
   padding: 1.25rem;
-  z-index: 1000;
+  /* Above .drawer-overlay (1050) — a confirm dialog (e.g. delete) can be
+     triggered from inside a drawer and must land on top of it. */
+  z-index: 1100;
   animation: modal-overlay-in 0.16s var(--ease);
 }
 
@@ -1553,7 +1640,10 @@ tr.expanded-row:hover td {
   -webkit-backdrop-filter: blur(2px);
   display: flex;
   justify-content: flex-end;
-  z-index: 900;
+  /* Above the mobile off-canvas .sidebar (1000) — opening the profile drawer
+     (or any DetailDrawer) from the hamburger menu must land on top of it,
+     not behind. */
+  z-index: 1050;
   animation: modal-overlay-in 0.16s var(--ease);
 }
 
@@ -1602,6 +1692,52 @@ tr.expanded-row:hover td {
   flex-direction: column;
   gap: 0.9rem;
   margin-bottom: 1.5rem;
+}
+
+.drawer-divider {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 1.5rem 0;
+}
+
+.profile-avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.profile-avatar-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--r-full);
+  background: linear-gradient(135deg, var(--primary-500), var(--teal-500));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* Uploaded logos/photos often have transparent backgrounds — the gradient
+   fallback (for initials) would otherwise show through as a colored ring. */
+.profile-avatar-preview.has-image {
+  background: #fff;
+}
+
+.profile-avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-avatar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
 }
 
 .drawer-field-label {
@@ -1653,93 +1789,55 @@ tr.expanded-row:hover td {
 }
 
 @media (max-width: 680px) {
-  .app-shell {
-    flex-direction: column;
-  }
-
+  /* Below this width the sidebar stops being a column that pushes content
+   * and becomes an off-canvas drawer instead — the same toggle, markup and
+   * nav-item styling as desktop, just slid off-screen by default (Layout.tsx
+   * picks the initial `menuOpen` state from this same breakpoint). */
   .sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    overflow-x: visible;
-    padding: 0.75rem 1rem;
-    gap: 0.5rem 0.75rem;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100svh;
+    width: 280px;
+    max-width: 82vw;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.22s var(--ease);
+    box-shadow: var(--shadow-lg);
   }
 
-  .sidebar-brand {
-    padding: 0 0.75rem 0 0;
+  .sidebar.open {
+    transform: translateX(0);
   }
 
-  .sidebar-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    flex: 1 1 auto;
-    min-width: 0;
-    gap: 0.3rem;
+  /* Desktop's "closed" collapses width to 0; on a drawer that's already
+   * off-canvas via transform, so undo the width/opacity collapse here. */
+  .sidebar.closed {
+    width: 280px;
+    padding: 1.3rem 1rem;
+    border-right: 1px solid var(--border);
   }
 
-  .nav-group-label {
-    display: none;
+  .sidebar.closed > * {
+    opacity: 1;
+    pointer-events: auto;
   }
 
-  .sidebar-footer {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    border-top: none;
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    order: 1;
-  }
-
-  .sidebar-footer .field {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    margin-bottom: 0 !important;
-  }
-
-  .sidebar-footer .field label {
-    display: none;
-  }
-
-  .language-switcher {
-    flex-shrink: 0;
-  }
-
-  .language-switcher-option {
-    flex: none;
-    padding: 0.32rem 0.55rem;
-  }
-
-  .user-card {
-    padding: 0.3rem;
-    gap: 0.4rem;
-  }
-
-  .user-meta {
-    display: none;
-  }
-
-  .sidebar-logout {
-    width: auto;
-    margin-top: 0;
-    margin-left: auto;
-    padding: 0.5rem;
-  }
-
-  .sidebar-logout-label {
-    display: none;
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 21, 32, 0.45);
+    z-index: 999;
+    animation: backdrop-in 0.15s var(--ease);
   }
 }
 
-@media (max-width: 400px) {
-  .sidebar-footer {
-    justify-content: space-between;
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }

@@ -273,7 +273,7 @@ export default function BroadcastsPage() {
               <MediaAttach key={`media-${composerKey}`} value={media} onChange={setMedia} />
             </div>
 
-            <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', marginTop: '0.5rem' }}>
               <button
                 type="button"
                 className="secondary"

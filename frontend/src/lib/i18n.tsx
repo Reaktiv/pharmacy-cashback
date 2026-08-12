@@ -24,7 +24,8 @@ type Vars = Record<string, string | number>
 const STRINGS = {
   // ---- Layout / nav ----
   nav_dashboard: { uz: 'Boshqaruv paneli', en: 'Dashboard', ru: 'Панель управления' },
-  nav_tenant: { uz: 'Tarmoq', en: 'Network', ru: 'Сеть' },
+  nav_tenant: { uz: 'Dorixona', en: 'Pharmacy', ru: 'Аптека' },
+  nav_tenant_settings: { uz: 'Sozlamalar', en: 'Settings', ru: 'Настройки' },
   nav_sellers: { uz: 'Sotuvchilar', en: 'Sellers', ru: 'Продавцы' },
   nav_broadcasts: { uz: 'Xabarnomalar', en: 'Broadcasts', ru: 'Рассылки' },
   nav_platform_broadcasts: {
@@ -35,8 +36,9 @@ const STRINGS = {
   nav_reports: { uz: 'Hisobotlar', en: 'Reports', ru: 'Отчёты' },
   nav_group_label: { uz: "Bo'limlar", en: 'Sections', ru: 'Разделы' },
   page_title_dashboard: { uz: 'Boshqaruv paneli', en: 'Dashboard', ru: 'Панель управления' },
-  page_title_tenant_detail: { uz: 'Tarmoq tafsilotlari', en: 'Network details', ru: 'Данные сети' },
-  page_title_tenant: { uz: 'Tarmoq sozlamalari', en: 'Network settings', ru: 'Настройки сети' },
+  page_title_tenant_detail: { uz: 'Dorixona tafsilotlari', en: 'Pharmacy details', ru: 'Данные аптеки' },
+  page_title_tenant: { uz: 'Dorixona', en: 'Pharmacy', ru: 'Аптека' },
+  page_title_tenant_settings: { uz: 'Sozlamalar', en: 'Settings', ru: 'Настройки' },
   page_title_sellers: { uz: 'Sotuvchilar', en: 'Sellers', ru: 'Продавцы' },
   page_title_broadcasts: { uz: 'Xabarnomalar', en: 'Broadcasts', ru: 'Рассылки' },
   page_title_platform_broadcasts: {
@@ -54,6 +56,74 @@ const STRINGS = {
     ru: 'Текущая сессия завершится, и для повторного входа потребуется ввести логин и пароль.',
   },
   language_label: { uz: 'Til', en: 'Language', ru: 'Язык' },
+  menu_toggle_hint: { uz: 'Menyu', en: 'Menu', ru: 'Меню' },
+
+  // ---- Profile drawer (self-service, every role) ----
+  profile_link_label: { uz: 'Profil', en: 'Profile', ru: 'Профиль' },
+  profile_heading: { uz: 'Mening profilim', en: 'My profile', ru: 'Мой профиль' },
+  profile_change_photo: { uz: 'Rasm tanlash', en: 'Change photo', ru: 'Изменить фото' },
+  profile_remove_photo: { uz: "Rasmni olib tashlash", en: 'Remove photo', ru: 'Удалить фото' },
+  profile_avatar_invalid_type: {
+    uz: 'Faqat rasm fayli yuklash mumkin.',
+    en: 'Only an image file can be uploaded.',
+    ru: 'Можно загружать только файл изображения.',
+  },
+  profile_avatar_too_large: {
+    uz: 'Rasm hajmi {size}MB dan oshmasligi kerak.',
+    en: 'The image must not exceed {size}MB.',
+    ru: 'Размер изображения не должен превышать {size} МБ.',
+  },
+  profile_save_error: {
+    uz: "Profilni saqlab bo'lmadi.",
+    en: "Couldn't save the profile.",
+    ru: 'Не удалось сохранить профиль.',
+  },
+  profile_load_error: {
+    uz: "Profilni yuklab bo'lmadi.",
+    en: "Couldn't load the profile.",
+    ru: 'Не удалось загрузить профиль.',
+  },
+  field_role: { uz: 'Rol', en: 'Role', ru: 'Роль' },
+
+  platform_branding_heading: {
+    uz: 'Platforma nomi va logotipi',
+    en: 'Platform name and logo',
+    ru: 'Название и логотип платформы',
+  },
+  field_platform_name: { uz: 'Platforma nomi', en: 'Platform name', ru: 'Название платформы' },
+
+  password_section_heading: {
+    uz: 'Parolni almashtirish',
+    en: 'Change password',
+    ru: 'Смена пароля',
+  },
+  field_current_password: { uz: 'Joriy parol', en: 'Current password', ru: 'Текущий пароль' },
+  field_new_password: { uz: 'Yangi parol', en: 'New password', ru: 'Новый пароль' },
+  field_confirm_new_password: {
+    uz: 'Yangi parolni takrorlang',
+    en: 'Confirm new password',
+    ru: 'Повторите новый пароль',
+  },
+  change_password_button: {
+    uz: 'Parolni almashtirish',
+    en: 'Change password',
+    ru: 'Сменить пароль',
+  },
+  password_changed_toast: {
+    uz: 'Parol muvaffaqiyatli almashtirildi.',
+    en: 'Password changed successfully.',
+    ru: 'Пароль успешно изменён.',
+  },
+  password_change_error: {
+    uz: "Parolni almashtirib bo'lmadi.",
+    en: "Couldn't change the password.",
+    ru: 'Не удалось изменить пароль.',
+  },
+  password_mismatch_error: {
+    uz: "Yangi parollar bir xil emas.",
+    en: "The new passwords don't match.",
+    ru: 'Новые пароли не совпадают.',
+  },
 
   // ---- Shared confirm dialog defaults ----
   confirm_default: { uz: 'Tasdiqlash', en: 'Confirm', ru: 'Подтвердить' },
@@ -165,7 +235,7 @@ const STRINGS = {
   },
 
   // ---- Shared field labels / hints ----
-  field_tenant_name: { uz: 'Tarmoq nomi', en: 'Network name', ru: 'Название сети' },
+  field_tenant_name: { uz: 'Dorixona nomi', en: 'Pharmacy name', ru: 'Название аптеки' },
   field_slug: {
     uz: 'Slug (URL uchun, masalan dorimed)',
     en: 'Slug (for the URL, e.g. dorimed)',
@@ -188,7 +258,7 @@ const STRINGS = {
   fallback_dash: { uz: '—', en: '—', ru: '—' },
   saving: { uz: 'Saqlanmoqda…', en: 'Saving…', ru: 'Сохранение…' },
   save: { uz: 'Saqlash', en: 'Save', ru: 'Сохранить' },
-  eyebrow_tenant: { uz: 'Tarmoq', en: 'Network', ru: 'Сеть' },
+  eyebrow_tenant: { uz: 'Dorixona', en: 'Pharmacy', ru: 'Аптека' },
   label_earned: { uz: "Yig'ilgan", en: 'Earned', ru: 'Начислено' },
   label_spent: { uz: 'Sarflangan', en: 'Spent', ru: 'Потрачено' },
   label_outstanding: { uz: 'Qoldiq', en: 'Outstanding', ru: 'Остаток' },
@@ -201,19 +271,19 @@ const STRINGS = {
 
   // ---- DashboardPage (superadmin) ----
   dashboard_create_tenant_error: {
-    uz: "Tarmoqni yaratib bo'lmadi.",
-    en: "Couldn't create the network.",
-    ru: 'Не удалось создать сеть.',
+    uz: "Dorixonani yaratib bo'lmadi.",
+    en: "Couldn't create the pharmacy.",
+    ru: 'Не удалось создать аптеку.',
   },
   dashboard_creating: { uz: 'Yaratilmoqda…', en: 'Creating…', ru: 'Создание…' },
-  dashboard_add_tenant_button: { uz: "Tarmoq qo'shish", en: 'Add network', ru: 'Добавить сеть' },
-  dashboard_stat_total_tenants: { uz: 'Jami tarmoqlar', en: 'Total networks', ru: 'Всего сетей' },
+  dashboard_add_tenant_button: { uz: "Dorixona qo'shish", en: 'Add pharmacy', ru: 'Добавить аптеку' },
+  dashboard_stat_total_tenants: { uz: 'Jami dorixonalar', en: 'Total pharmacies', ru: 'Всего аптек' },
   dashboard_stat_active_count: { uz: '{count} ta faol', en: '{count} active', ru: '{count} активных' },
   dashboard_stat_total_customers: { uz: 'Jami mijozlar', en: 'Total customers', ru: 'Всего клиентов' },
   dashboard_stat_customers_sub: {
-    uz: "barcha tarmoqlar bo'yicha",
-    en: 'across all networks',
-    ru: 'по всем сетям',
+    uz: "barcha dorixonalar bo'yicha",
+    en: 'across all pharmacies',
+    ru: 'по всем аптекам',
   },
   dashboard_stat_today_txns: { uz: 'Bugungi tranzaksiyalar', en: "Today's transactions", ru: 'Транзакции за сегодня' },
   dashboard_stat_today_txns_sub: { uz: 'barcha filiallarda', en: 'across all branches', ru: 'по всем филиалам' },
@@ -223,30 +293,30 @@ const STRINGS = {
     en: 'customer balances, UZS',
     ru: 'баланс клиентов, сум',
   },
-  dashboard_all_tenants_heading: { uz: 'Barcha tarmoqlar', en: 'All networks', ru: 'Все сети' },
+  dashboard_all_tenants_heading: { uz: 'Barcha dorixonalar', en: 'All pharmacies', ru: 'Все аптеки' },
   dashboard_all_tenants_hint: {
     uz: "Batafsil ma'lumot uchun qatorni bosing.",
     en: 'Click a row for details.',
     ru: 'Нажмите на строку, чтобы увидеть подробности.',
   },
-  dashboard_empty_title: { uz: "Hali birorta tarmoq yo'q", en: 'No networks yet', ru: 'Пока нет ни одной сети' },
+  dashboard_empty_title: { uz: "Hali birorta dorixona yo'q", en: 'No pharmacies yet', ru: 'Пока нет ни одной аптеки' },
   dashboard_empty_subtitle: {
-    uz: "Pastdagi shakl orqali birinchi dorixona tarmog'ini qo'shing.",
-    en: 'Use the form below to add your first pharmacy network.',
-    ru: 'Добавьте первую сеть аптек с помощью формы ниже.',
+    uz: "Pastdagi shakl orqali birinchi dorixonangizni qo'shing.",
+    en: 'Use the form below to add your first pharmacy.',
+    ru: 'Добавьте первую аптеку с помощью формы ниже.',
   },
   th_bot: { uz: 'Bot', en: 'Bot', ru: 'Бот' },
-  th_tenant: { uz: 'Tarmoq', en: 'Network', ru: 'Сеть' },
+  th_tenant: { uz: 'Dorixona', en: 'Pharmacy', ru: 'Аптека' },
   th_customers: { uz: 'Mijozlar', en: 'Customers', ru: 'Клиенты' },
   th_active_30d: { uz: 'Faol (30 kun)', en: 'Active (30d)', ru: 'Активны (30 дн)' },
   th_today_txns: { uz: 'Bugungi tranzaksiyalar', en: "Today's transactions", ru: 'Транзакции за сегодня' },
   th_total_liability: { uz: 'Umumiy majburiyat', en: 'Total liability', ru: 'Общие обязательства' },
   th_status: { uz: 'Holati', en: 'Status', ru: 'Статус' },
-  dashboard_add_new_tenant_heading: { uz: 'Yangi tarmoq qo\'shish', en: 'Add a new network', ru: 'Добавить новую сеть' },
+  dashboard_add_new_tenant_heading: { uz: 'Yangi dorixona qo\'shish', en: 'Add a new pharmacy', ru: 'Добавить новую аптеку' },
   dashboard_add_new_tenant_hint: {
-    uz: "Yaratilgach, botni ulash va filiallarni sozlash uchun tarmoq sahifasiga o'tasiz.",
-    en: "After creating it, you'll be taken to the network page to connect a bot and set up branches.",
-    ru: 'После создания вы перейдёте на страницу сети, чтобы подключить бота и настроить филиалы.',
+    uz: "Yaratilgach, botni ulash va filiallarni sozlash uchun dorixona sahifasiga o'tasiz.",
+    en: "After creating it, you'll be taken to the pharmacy page to connect a bot and set up branches.",
+    ru: 'После создания вы перейдёте на страницу аптеки, чтобы подключить бота и настроить филиалы.',
   },
 
   // ---- TenantDetailPage (superadmin) ----
@@ -257,9 +327,9 @@ const STRINGS = {
     ru: 'Не удалось обновить токен.',
   },
   tenant_detail_no_bot: {
-    uz: 'Bu tarmoq uchun hali bot ulanmagan.',
-    en: 'No bot has been connected for this network yet.',
-    ru: 'Для этой сети ещё не подключён бот.',
+    uz: 'Bu dorixona uchun hali bot ulanmagan.',
+    en: 'No bot has been connected for this pharmacy yet.',
+    ru: 'Для этой аптеки ещё не подключён бот.',
   },
   field_bot_username: {
     uz: 'Bot foydalanuvchi nomi (masalan @dorimed_bot)',
@@ -283,18 +353,18 @@ const STRINGS = {
     ru: 'Заменить токен бота?',
   },
   tenant_detail_rotate_confirm_description: {
-    uz: "Eski token darhol ishlamay qoladi va bot shu tarmoqqa bog'langan holda qoladi. Agar yangi token boshqa botga tegishli bo'lsa, eski bot endi javob bermaydi — bu amalni ortga qaytarib bo'lmaydi.",
-    en: "The old token stops working immediately and the bot stays linked to this network. If the new token belongs to a different bot, the old bot will stop responding — this action cannot be undone.",
-    ru: "Старый токен перестанет работать немедленно, а бот останется привязан к этой сети. Если новый токен принадлежит другому боту, старый бот перестанет отвечать — это действие нельзя отменить.",
+    uz: "Eski token darhol ishlamay qoladi va bot shu dorixonaga bog'langan holda qoladi. Agar yangi token boshqa botga tegishli bo'lsa, eski bot endi javob bermaydi — bu amalni ortga qaytarib bo'lmaydi.",
+    en: "The old token stops working immediately and the bot stays linked to this pharmacy. If the new token belongs to a different bot, the old bot will stop responding — this action cannot be undone.",
+    ru: "Старый токен перестанет работать немедленно, а бот останется привязан к этой аптеке. Если новый токен принадлежит другому боту, старый бот перестанет отвечать — это действие нельзя отменить.",
   },
-  tenant_detail_delete_error: { uz: "Tarmoqni o'chirib bo'lmadi.", en: "Couldn't delete the network.", ru: 'Не удалось удалить сеть.' },
-  tenant_detail_back_link: { uz: 'Barcha tarmoqlar', en: 'All networks', ru: 'Все сети' },
+  tenant_detail_delete_error: { uz: "Dorixonani o'chirib bo'lmadi.", en: "Couldn't delete the pharmacy.", ru: 'Не удалось удалить аптеку.' },
+  tenant_detail_back_link: { uz: 'Barcha dorixonalar', en: 'All pharmacies', ru: 'Все аптеки' },
   tenant_detail_meta: {
     uz: '{slug} · {rate}% keshbek · {status}',
     en: '{slug} · {rate}% cashback · {status}',
     ru: '{slug} · кешбэк {rate}% · {status}',
   },
-  tenant_detail_delete_button: { uz: "Tarmoqni o'chirish", en: 'Delete network', ru: 'Удалить сеть' },
+  tenant_detail_delete_button: { uz: "Dorixonani o'chirish", en: 'Delete pharmacy', ru: 'Удалить аптеку' },
   label_outstanding_liability: { uz: 'Qoldiq (majburiyat)', en: 'Outstanding (liability)', ru: 'Остаток (обязательства)' },
   label_branches: { uz: 'Filiallar', en: 'Branches', ru: 'Филиалы' },
   tenant_detail_bot_card_heading: { uz: 'Telegram bot', en: 'Telegram bot', ru: 'Telegram-бот' },
@@ -319,41 +389,66 @@ const STRINGS = {
     ru: 'Месячный лимит рассылок',
   },
   field_broadcast_quota_hint: {
-    uz: "Bu tarmoqning barcha tarmoq adminlari birgalikda oyiga shuncha xabarnoma yubora oladi. Bo'sh qoldiring — cheklanmagan.",
-    en: 'All of this tenant’s tenant_admin logins share this monthly cap. Leave empty for unlimited.',
-    ru: 'Все администраторы этой сети вместе могут отправить столько рассылок в месяц. Оставьте пустым — без ограничений.',
+    uz: "Bu dorixonaning barcha dorixona adminlari birgalikda oyiga shuncha xabarnoma yubora oladi. Bo'sh qoldiring — cheklanmagan.",
+    en: 'All of this pharmacy’s admin logins share this monthly cap. Leave empty for unlimited.',
+    ru: 'Все администраторы этой аптеки вместе могут отправить столько рассылок в месяц. Оставьте пустым — без ограничений.',
+  },
+  tenant_detail_branch_limit_card_heading: {
+    uz: 'Filial limiti',
+    en: 'Branch limit',
+    ru: 'Лимит филиалов',
+  },
+  tenant_branch_limit_usage: {
+    uz: '{used} / {limit} ta filial qo’shilgan.',
+    en: '{used} / {limit} branches added.',
+    ru: 'Добавлено {used} / {limit} филиалов.',
+  },
+  tenant_detail_branch_limit_save_error: {
+    uz: "Filial limitini saqlab bo'lmadi.",
+    en: "Couldn't save the branch limit.",
+    ru: 'Не удалось сохранить лимит филиалов.',
+  },
+  field_branch_limit: {
+    uz: 'Filiallar soni limiti',
+    en: 'Branch count limit',
+    ru: 'Лимит количества филиалов',
+  },
+  field_branch_limit_hint: {
+    uz: "Bu dorixona jami nechta filial qo'sha olishini belgilaydi. Bo'sh qoldiring — cheklanmagan.",
+    en: 'Sets the total number of branches this pharmacy can add. Leave empty for unlimited.',
+    ru: 'Определяет общее число филиалов, которые может добавить эта аптека. Оставьте пустым — без ограничений.',
   },
   th_branch: { uz: 'Filial', en: 'Branch', ru: 'Филиал' },
   last_14_days: { uz: "So'nggi 14 kun", en: 'Last 14 days', ru: 'Последние 14 дней' },
-  tenant_delete_step1_title: { uz: "Tarmoqni o'chirasizmi?", en: 'Delete this network?', ru: 'Удалить сеть?' },
+  tenant_delete_step1_title: { uz: "Dorixonani o'chirasizmi?", en: 'Delete this pharmacy?', ru: 'Удалить аптеку?' },
   tenant_delete_step1_description: {
-    uz: " tarmog'ini o'chirsangiz, uning barcha filiallari, sotuvchilari va mijozlari endi tizimga kira olmaydi yoki mavjud bo'lmaydi.",
-    en: " — deleting this network means all its branches, sellers, and customers will no longer be able to sign in or exist.",
-    ru: ' — при удалении этой сети все её филиалы, продавцы и клиенты перестанут существовать или смогут входить в систему.',
+    uz: " dorixonasini o'chirsangiz, uning barcha filiallari, sotuvchilari va mijozlari endi tizimga kira olmaydi yoki mavjud bo'lmaydi.",
+    en: " — deleting this pharmacy means all its branches, sellers, and customers will no longer be able to sign in or exist.",
+    ru: ' — при удалении этой аптеки все её филиалы, продавцы и клиенты перестанут существовать или смогут входить в систему.',
   },
   delete_all_transactions_title: {
     uz: "Barcha tranzaksiyalar to'liq o'chib ketadi",
     en: 'All transactions will be permanently deleted',
     ru: 'Все транзакции будут полностью удалены',
   },
-  tenant_detail_admins_card_heading: { uz: 'Tarmoq adminlari', en: 'Tenant admins', ru: 'Администраторы сети' },
-  tenant_detail_admins_empty_title: { uz: "Hozircha tarmoq admini yo'q", en: 'No tenant admins yet', ru: 'Пока нет администраторов сети' },
+  tenant_detail_admins_card_heading: { uz: 'Dorixona adminlari', en: 'Pharmacy admins', ru: 'Администраторы аптеки' },
+  tenant_detail_admins_empty_title: { uz: "Hozircha dorixona admini yo'q", en: 'No pharmacy admins yet', ru: 'Пока нет администраторов аптеки' },
   tenant_detail_admin_create_error: {
-    uz: "Tarmoq adminini yaratib bo'lmadi.",
-    en: "Couldn't create the tenant admin.",
-    ru: 'Не удалось создать администратора сети.',
+    uz: "Dorixona adminini yaratib bo'lmadi.",
+    en: "Couldn't create the pharmacy admin.",
+    ru: 'Не удалось создать администратора аптеки.',
   },
   tenant_detail_admin_delete_error: {
-    uz: "Tarmoq adminini o'chirib bo'lmadi.",
-    en: "Couldn't delete the tenant admin.",
-    ru: 'Не удалось удалить администратора сети.',
+    uz: "Dorixona adminini o'chirib bo'lmadi.",
+    en: "Couldn't delete the pharmacy admin.",
+    ru: 'Не удалось удалить администратора аптеки.',
   },
   tenant_detail_add_admin_button: { uz: "Admin qo'shish", en: 'Add admin', ru: 'Добавить администратора' },
-  admin_drawer_subtitle: { uz: 'Tarmoq admini', en: 'Tenant admin', ru: 'Администратор сети' },
+  admin_drawer_subtitle: { uz: 'Dorixona admini', en: 'Pharmacy admin', ru: 'Администратор аптеки' },
   admin_delete_button: { uz: "Adminni o'chirish", en: 'Delete admin', ru: 'Удалить администратора' },
-  admin_delete_title: { uz: "Tarmoq adminini o'chirasizmi?", en: 'Delete this tenant admin?', ru: 'Удалить администратора сети?' },
+  admin_delete_title: { uz: "Dorixona adminini o'chirasizmi?", en: 'Delete this pharmacy admin?', ru: 'Удалить администратора аптеки?' },
   tenant_delete_step2_description: {
-    uz: " tarmog'ining barcha tranzaksiya tarixi, botiga bog'liq narsalar bilan birga, butunlay o'chib ketadi. Bu amalni ortga qaytarib bo'lmaydi.",
+    uz: " dorixonaning barcha tranzaksiya tarixi, botiga bog'liq narsalar bilan birga, butunlay o'chib ketadi. Bu amalni ortga qaytarib bo'lmaydi.",
     en: "'s entire transaction history, along with everything tied to its bot, will be permanently deleted. This action cannot be undone.",
     ru: ' — вся история транзакций вместе со всем, что связано с её ботом, будет безвозвратно удалена. Это действие нельзя отменить.',
   },
@@ -377,9 +472,9 @@ const STRINGS = {
   branch_delete_button: { uz: "Filialni o'chirish", en: 'Delete branch', ru: 'Удалить филиал' },
   branch_delete_step1_title: { uz: "Filialni o'chirasizmi?", en: 'Delete this branch?', ru: 'Удалить филиал?' },
   branch_delete_step1_description: {
-    uz: " filialidagi sotuvchilar va filial menejeri endi tizimga kira olmaydi.",
-    en: "'s sellers and branch manager will no longer be able to sign in.",
-    ru: ' — продавцы и менеджер этого филиала больше не смогут входить в систему.',
+    uz: " filialidagi sotuvchilar va filial admini endi tizimga kira olmaydi.",
+    en: "'s sellers and branch admin will no longer be able to sign in.",
+    ru: ' — продавцы и администратор этого филиала больше не смогут входить в систему.',
   },
   branch_delete_step2_description: {
     uz: " filialidagi barcha tranzaksiya tarixi butunlay o'chib ketadi. Bu amalni ortga qaytarib bo'lmaydi.",
@@ -387,33 +482,49 @@ const STRINGS = {
     ru: ' — вся история транзакций этого филиала будет безвозвратно удалена. Это действие нельзя отменить.',
   },
   tenant_admin_manager_delete_error: {
-    uz: "Filial menejerini o'chirib bo'lmadi.",
-    en: "Couldn't delete the branch manager.",
-    ru: 'Не удалось удалить менеджера филиала.',
+    uz: "Filial adminini o'chirib bo'lmadi.",
+    en: "Couldn't delete the branch admin.",
+    ru: 'Не удалось удалить администратора филиала.',
   },
   tenant_admin_manager_create_error: {
-    uz: "Filial menejerini yaratib bo'lmadi.",
-    en: "Couldn't create the branch manager.",
-    ru: 'Не удалось создать менеджера филиала.',
+    uz: "Filial adminini yaratib bo'lmadi.",
+    en: "Couldn't create the branch admin.",
+    ru: 'Не удалось создать администратора филиала.',
   },
   tenant_admin_managers_empty_title: {
-    uz: "Hozircha filial menejerlari yo'q",
-    en: 'No branch managers yet',
-    ru: 'Пока нет менеджеров филиалов',
+    uz: "Hozircha filial adminlari yo'q",
+    en: 'No branch admins yet',
+    ru: 'Пока нет администраторов филиалов',
   },
   th_login: { uz: 'Login', en: 'Login', ru: 'Логин' },
   tenant_admin_add_manager_button: {
-    uz: "Filial menejerini qo'shish",
-    en: 'Add branch manager',
-    ru: 'Добавить менеджера филиала',
+    uz: "Filial adminini qo'shish",
+    en: 'Add branch admin',
+    ru: 'Добавить администратора филиала',
   },
-  manager_drawer_subtitle: { uz: 'Filial menejeri', en: 'Branch manager', ru: 'Менеджер филиала' },
-  manager_delete_button: { uz: "Menejerni o'chirish", en: 'Delete manager', ru: 'Удалить менеджера' },
-  manager_delete_title: { uz: "Filial menejerini o'chirasizmi?", en: 'Delete this branch manager?', ru: 'Удалить менеджера филиала?' },
+  manager_drawer_subtitle: { uz: 'Filial admini', en: 'Branch admin', ru: 'Администратор филиала' },
+  manager_delete_button: { uz: "Filial adminini o'chirish", en: 'Delete admin', ru: 'Удалить администратора' },
+  manager_delete_title: { uz: "Filial adminini o'chirasizmi?", en: 'Delete this branch admin?', ru: 'Удалить администратора филиала?' },
   login_will_lose_access: {
     uz: " endi tizimga kira olmaydi. Bu amalni ortga qaytarib bo'lmaydi.",
     en: ' will no longer be able to sign in. This action cannot be undone.',
     ru: ' больше не сможет входить в систему. Это действие нельзя отменить.',
+  },
+  tenant_admin_identity_card_heading: {
+    uz: 'Dorixona nomi va logotipi',
+    en: 'Pharmacy name and logo',
+    ru: 'Название и логотип аптеки',
+  },
+  tenant_admin_identity_save_error: {
+    uz: "Dorixona ma'lumotlarini saqlab bo'lmadi.",
+    en: "Couldn't save the pharmacy's details.",
+    ru: 'Не удалось сохранить данные аптеки.',
+  },
+  tenant_admin_change_logo: { uz: 'Logotip tanlash', en: 'Change logo', ru: 'Изменить логотип' },
+  tenant_admin_remove_logo: {
+    uz: 'Logotipni olib tashlash',
+    en: 'Remove logo',
+    ru: 'Удалить логотип',
   },
   tenant_admin_rate_card_heading: { uz: 'Foizni sozlash', en: 'Set the rate', ru: 'Настройка ставки' },
   tenant_admin_quota_card_heading: {
@@ -421,7 +532,17 @@ const STRINGS = {
     en: 'Broadcast quota',
     ru: 'Лимит рассылок',
   },
-  section_heading_branch_managers: { uz: 'Filial menejerlari', en: 'Branch managers', ru: 'Менеджеры филиалов' },
+  section_heading_branch_managers: { uz: 'Filial adminlari', en: 'Branch admins', ru: 'Администраторы филиалов' },
+  tenant_admin_add_branch_card_heading: {
+    uz: "Filial qo'shish",
+    en: 'Add a branch',
+    ru: 'Добавить филиал',
+  },
+  tenant_admin_assign_manager_card_heading: {
+    uz: 'Filialga admin biriktirish',
+    en: 'Assign an admin to a branch',
+    ru: 'Назначить администратора филиалу',
+  },
 
   // ---- SellersPage ----
   sellers_delete_error: { uz: "Sotuvchini o'chirib bo'lmadi.", en: "Couldn't delete the seller.", ru: 'Не удалось удалить продавца.' },
@@ -466,7 +587,7 @@ const STRINGS = {
   th_media: { uz: 'Media', en: 'Media', ru: 'Медиа' },
   th_sent: { uz: 'Yuborildi', en: 'Sent', ru: 'Отправлено' },
   th_failed: { uz: 'Muvaffaqiyatsiz', en: 'Failed', ru: 'Не удалось' },
-  th_tenants: { uz: 'Apteka tizimlari', en: 'Tenants', ru: 'Сети аптек' },
+  th_tenants: { uz: 'Dorixonalar', en: 'Pharmacies', ru: 'Аптеки' },
   media_type_image: { uz: 'Rasm', en: 'Image', ru: 'Изображение' },
   media_type_video: { uz: 'Video', en: 'Video', ru: 'Видео' },
 
@@ -477,14 +598,14 @@ const STRINGS = {
     ru: 'Платформенные рассылки',
   },
   platform_broadcasts_description: {
-    uz: "Bu yerdan yuborilgan xabarnoma barcha faol apteka tizimlarining mijozlariga, har birining o'z boti orqali yuboriladi.",
-    en: 'A broadcast sent from here goes out to every active tenant’s customers, through each tenant’s own bot.',
-    ru: 'Рассылка, отправленная отсюда, уходит клиентам всех активных сетей аптек через бота каждой сети.',
+    uz: "Bu yerdan yuborilgan xabarnoma barcha faol dorixonalarning mijozlariga, har birining o'z boti orqali yuboriladi.",
+    en: 'A broadcast sent from here goes out to every active pharmacy’s customers, through each pharmacy’s own bot.',
+    ru: 'Рассылка, отправленная отсюда, уходит клиентам всех активных аптек через бота каждой аптеки.',
   },
   platform_broadcast_new_description: {
-    uz: "Barcha apteka tizimlariga yuboriladi — tarmoqlarning oylik xabarnoma limitiga ta'sir qilmaydi.",
-    en: 'Sent to every tenant — never counts against any tenant’s monthly broadcast quota.',
-    ru: 'Отправляется всем сетям аптек — не учитывается в месячном лимите рассылок ни одной сети.',
+    uz: "Barcha dorixonalarga yuboriladi — dorixonalarning oylik xabarnoma limitiga ta'sir qilmaydi.",
+    en: 'Sent to every pharmacy — never counts against any pharmacy’s monthly broadcast quota.',
+    ru: 'Отправляется всем аптекам — не учитывается в месячном лимите рассылок ни одной аптеки.',
   },
   platform_broadcast_send_now_button: {
     uz: 'Barchaga yuborish',
@@ -495,9 +616,9 @@ const STRINGS = {
   broadcast_send_button: { uz: 'Yuborish', en: 'Send', ru: 'Отправить' },
   broadcast_new_heading: { uz: 'Yangi xabarnoma', en: 'New broadcast', ru: 'Новая рассылка' },
   broadcast_new_description: {
-    uz: "Xabarnoma ushbu tarmoqning botiga obuna bo'lgan barcha faol mijozlarga yuboriladi. Filial bo'yicha yo'naltirish hozircha mavjud emas — mijozlar aniq bir filialga bog'lanmagan (kelajakdagi imkoniyat).",
-    en: "The broadcast will be sent to all active customers subscribed to this network's bot. Targeting by branch isn't available yet — customers aren't tied to a specific branch (a future feature).",
-    ru: 'Рассылка будет отправлена всем активным клиентам, подписанным на бота этой сети. Таргетинг по филиалам пока недоступен — клиенты не привязаны к конкретному филиалу (будущая возможность).',
+    uz: "Xabarnoma ushbu dorixonaning botiga obuna bo'lgan barcha faol mijozlarga yuboriladi. Filial bo'yicha yo'naltirish hozircha mavjud emas — mijozlar aniq bir filialga bog'lanmagan (kelajakdagi imkoniyat).",
+    en: "The broadcast will be sent to all active customers subscribed to this pharmacy's bot. Targeting by branch isn't available yet — customers aren't tied to a specific branch (a future feature).",
+    ru: 'Рассылка будет отправлена всем активным клиентам, подписанным на бота этой аптеки. Таргетинг по филиалам пока недоступен — клиенты не привязаны к конкретному филиалу (будущая возможность).',
   },
   broadcast_title_placeholder: {
     uz: 'Masalan: Dam olish kunlari aksiyasi',
@@ -579,9 +700,14 @@ const STRINGS = {
 
   // ---- lib/labels.ts ----
   role_superadmin: { uz: 'Superadmin', en: 'Superadmin', ru: 'Суперадмин' },
-  role_tenant_admin: { uz: 'Tarmoq admini', en: 'Network admin', ru: 'Администратор сети' },
-  role_branch_manager: { uz: 'Filial menejeri', en: 'Branch manager', ru: 'Менеджер филиала' },
+  role_tenant_admin: { uz: 'Dorixona admini', en: 'Pharmacy admin', ru: 'Администратор аптеки' },
+  role_branch_manager: { uz: 'Filial admini', en: 'Branch admin', ru: 'Администратор филиала' },
   role_seller: { uz: 'Sotuvchi', en: 'Seller', ru: 'Продавец' },
+  role_unassigned: {
+    uz: 'Rol tayinlanmagan',
+    en: 'No role assigned',
+    ru: 'Роль не назначена',
+  },
   status_active: { uz: 'Faol', en: 'Active', ru: 'Активен' },
   status_inactive: { uz: 'Faol emas', en: 'Inactive', ru: 'Неактивен' },
   broadcast_status_draft: { uz: 'Qoralama', en: 'Draft', ru: 'Черновик' },
@@ -601,9 +727,20 @@ function interpolate(template: string, vars?: Vars): string {
   )
 }
 
-/** Non-hook translation, for use outside React components (e.g. api/client.ts). */
+/** Non-hook translation, for use outside React components (e.g. api/client.ts).
+ * Falls back to the raw key instead of throwing when `key` isn't a real
+ * STRINGS entry — callers sometimes derive it from a lookup table keyed by
+ * a value that can legitimately fall outside the cases anyone thought to
+ * handle (e.g. a role of "unassigned" with no ROLE_KEYS entry — see
+ * lib/labels.ts). A missing translation should read as a rough label, not
+ * take the whole page down. */
 export function translate(language: Language, key: StringKey, vars?: Vars): string {
-  return interpolate(STRINGS[key][language], vars)
+  const entry = STRINGS[key]
+  if (!entry) {
+    if (import.meta.env.DEV) console.warn(`translate(): no STRINGS entry for key "${String(key)}"`)
+    return String(key)
+  }
+  return interpolate(entry[language] ?? entry[DEFAULT_LANGUAGE], vars)
 }
 
 export function getStoredLanguage(): Language {

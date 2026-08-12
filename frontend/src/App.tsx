@@ -8,6 +8,7 @@ import RoleRedirect from './pages/RoleRedirect'
 import DashboardPage from './pages/DashboardPage'
 import TenantDetailPage from './pages/TenantDetailPage'
 import TenantAdminPage from './pages/TenantAdminPage'
+import TenantSettingsPage from './pages/TenantSettingsPage'
 import SellersPage from './pages/SellersPage'
 import BroadcastsPage from './pages/BroadcastsPage'
 import SuperadminBroadcastsPage from './pages/SuperadminBroadcastsPage'
@@ -33,13 +34,17 @@ export default function App() {
 
                 <Route element={<ProtectedRoute allow={['tenant_admin']} />}>
                   <Route path="/tenant" element={<TenantAdminPage />} />
+                  <Route path="/tenant/settings" element={<TenantSettingsPage />} />
                   <Route path="/broadcasts" element={<BroadcastsPage />} />
+                </Route>
+
+                <Route element={<ProtectedRoute allow={['branch_manager']} />}>
+                  <Route path="/sellers" element={<SellersPage />} />
                 </Route>
 
                 <Route
                   element={<ProtectedRoute allow={['tenant_admin', 'branch_manager']} />}
                 >
-                  <Route path="/sellers" element={<SellersPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                 </Route>
               </Route>
