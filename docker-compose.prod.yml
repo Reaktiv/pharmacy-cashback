@@ -27,11 +27,17 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    # Plain uvicorn, not `gunicorn -k uvicorn.workers.UvicornWorker` — on
+    # this stack, gunicorn==26.0.0's arbiter binds the socket to 127.0.0.1
+    # even when passed `-b 0.0.0.0:8000` (verified at the kernel level via
+    # /proc/net/tcp: the listening socket's local address was 0100007F,
+    # i.e. loopback-only), which nginx in a separate container can never
+    # reach. Plain uvicorn with the same --host/--port binds correctly.
     command: >
       sh -c "python manage.py migrate --noinput &&
              python manage.py collectstatic --noinput &&
-             gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker
-               -b 0.0.0.0:8000 --workers 3 --access-logfile - --error-logfile -"
+             uvicorn config.asgi:application --host 0.0.0.0 --port 8000
+               --workers 3 --access-log"
     volumes:
       - media:/app/media
       - static:/app/staticfiles
