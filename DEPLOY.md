@@ -188,6 +188,18 @@ docker compose -f docker-compose.prod.yml up -d --build
 `web`'s startup command re-runs `migrate` and `collectstatic` every time,
 so new migrations apply automatically.
 
+**If this pull touched `nginx/app.conf`, that alone is not enough** —
+`nginx/active.conf` (step 6) is a one-time, gitignored, domain-substituted
+copy generated from `app.conf`; `git pull` updates the template but never
+regenerates the copy nginx is actually serving, so template edits silently
+never take effect until you redo this:
+
+```bash
+sed "s/__DOMAIN__/your-domain.com/g" nginx/app.conf > nginx/active.conf
+docker compose -f docker-compose.prod.yml exec nginx nginx -t   # validate first
+docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+```
+
 ## Notes
 
 - **Backups**: nothing here backs up the `pgdata` volume automatically.
