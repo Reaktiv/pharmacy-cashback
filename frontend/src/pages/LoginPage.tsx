@@ -9,7 +9,7 @@ import { LANGUAGES, useLanguage, type Language } from '../lib/i18n'
 
 /** Deliberately a plain, un-authenticated fetch — NOT apiFetch/
  * apiFetchObjectUrl. Those attach whatever JWT is still sitting in
- * localStorage (e.g. an expired one from the session that just logged the
+ * sessionStorage (e.g. an expired one from the session that just logged the
  * user out onto this very page), and SimpleJWT's authenticator raises on
  * an invalid token before DRF ever reaches the view's AllowAny permission
  * — so a stale token would 401 this "public" endpoint. Plain fetch never

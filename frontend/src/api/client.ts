@@ -3,22 +3,32 @@ import { getStoredLanguage, translate } from '../lib/i18n'
 const ACCESS_KEY = 'pharmacy_cashback_access'
 const REFRESH_KEY = 'pharmacy_cashback_refresh'
 
+// sessionStorage, not localStorage: this is a multi-tenant admin tool where
+// the same person plausibly has more than one account open at once (e.g. a
+// superadmin tab alongside a tenant_admin tab, or two different tenants'
+// admin logins side by side). localStorage is shared across every tab of
+// the same browser, so a login/refresh in one tab silently overwrote the
+// token another tab was using — a request from tab A could execute under
+// tab B's identity, surfacing as confusing tenant-scoped 400s/404s that
+// looked like backend bugs but weren't. sessionStorage is isolated per tab,
+// which eliminates that class of bug outright — the tradeoff is a brand
+// new tab always starts logged out, which is the right default here.
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_KEY)
+  return sessionStorage.getItem(ACCESS_KEY)
 }
 
 export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_KEY)
+  return sessionStorage.getItem(REFRESH_KEY)
 }
 
 export function setTokens(access: string, refresh: string): void {
-  localStorage.setItem(ACCESS_KEY, access)
-  localStorage.setItem(REFRESH_KEY, refresh)
+  sessionStorage.setItem(ACCESS_KEY, access)
+  sessionStorage.setItem(REFRESH_KEY, refresh)
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_KEY)
-  localStorage.removeItem(REFRESH_KEY)
+  sessionStorage.removeItem(ACCESS_KEY)
+  sessionStorage.removeItem(REFRESH_KEY)
 }
 
 export class ApiError extends Error {
@@ -50,7 +60,7 @@ async function refreshAccessToken(): Promise<string> {
     throw new ApiError(response.status, await response.json().catch(() => ({})))
   }
   const data = (await response.json()) as { access: string }
-  localStorage.setItem(ACCESS_KEY, data.access)
+  sessionStorage.setItem(ACCESS_KEY, data.access)
   return data.access
 }
 
