@@ -156,6 +156,30 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
 }
 
+# Django's own default LOGGING only sends unhandled-exception tracebacks to
+# `mail_admins` when DEBUG=False (its `console` handler is filtered to
+# require_debug_true) — with no ADMINS/email backend configured, that means
+# every production 500 vanishes silently instead of appearing in `docker
+# compose logs web`. Route it to stdout unconditionally instead, at INFO so
+# uvicorn's request-level warnings (4xx client errors DRF logs at INFO) show
+# up too, not just crashes.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 # Celery (CLAUDE.md §9: notifications, broadcasts throttled to Telegram's ~25 msg/sec)
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
