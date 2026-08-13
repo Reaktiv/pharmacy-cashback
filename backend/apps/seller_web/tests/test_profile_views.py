@@ -147,7 +147,9 @@ def test_seller_can_fetch_tenant_logo_once_tenant_admin_uploads_one(
 
 
 @pytest.mark.django_db
-def test_seller_tenant_logo_404s_when_tenant_has_no_logo(client, make_tenant, make_branch, make_seller):
+def test_seller_tenant_logo_404s_when_tenant_has_no_logo(
+    client, make_tenant, make_branch, make_seller
+):
     tenant = make_tenant("t")
     branch = make_branch(tenant)
     seller = make_seller(tenant, branch)

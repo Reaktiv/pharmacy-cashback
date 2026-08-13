@@ -4,7 +4,12 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.models import UserProfile
-from apps.broadcasts.models import Broadcast, BroadcastMedia, PlatformBroadcast, PlatformBroadcastMedia
+from apps.broadcasts.models import (
+    Broadcast,
+    BroadcastMedia,
+    PlatformBroadcast,
+    PlatformBroadcastMedia,
+)
 from apps.broadcasts.tasks import send_platform_broadcast
 from apps.tenants.models import Bot as BotRow
 
@@ -113,7 +118,9 @@ def test_fan_out_copies_media_into_a_distinct_broadcast_media_row_per_tenant(
     with patch("apps.broadcasts.tasks.send_broadcast"):
         send_platform_broadcast(pb.pk)
 
-    legs = list(Broadcast.objects.all_tenants().filter(platform_broadcast=pb).select_related("media"))
+    legs = list(
+        Broadcast.objects.all_tenants().filter(platform_broadcast=pb).select_related("media")
+    )
     assert len(legs) == 2
     media_rows = [leg.media for leg in legs]
     assert all(m is not None for m in media_rows)
@@ -127,7 +134,8 @@ def test_fan_out_copies_media_into_a_distinct_broadcast_media_row_per_tenant(
 
     # The two copies are genuinely separate BroadcastMedia rows/files, not
     # the same one reused across tenants.
-    assert BroadcastMedia.objects.all_tenants().filter(pk__in=[m.pk for m in media_rows]).count() == 2
+    media_pks = [m.pk for m in media_rows]
+    assert BroadcastMedia.objects.all_tenants().filter(pk__in=media_pks).count() == 2
 
 
 @pytest.mark.django_db

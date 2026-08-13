@@ -12,6 +12,10 @@ request.user from the JWT lazily, inside the view's dispatch(), which is too
 late for this middleware to see. So for requests with no session user, this
 also tries JWTAuthentication directly (reusing SimpleJWT's own class, not
 reimplementing token verification) to resolve the same user DRF would.
+Both this call and DRF's later one go through CachingJWTAuthentication
+(apps.tenants.authentication), which memoizes the result on the request so
+the token is only decoded and the user only fetched once per request — see
+that module's docstring for why a naive two-call setup doubles DB work.
 
 Telegram webhooks: resolved from the bot's webhook_secret, wired in Phase 5.
 
@@ -20,15 +24,14 @@ auto-generated reverse one-to-one accessor (UserProfile.user's related_name),
 so this module has no compile-time dependency on the accounts app.
 """
 
-from rest_framework_simplejwt.authentication import JWTAuthentication
-
+from apps.tenants.authentication import CachingJWTAuthentication
 from apps.tenants.context import reset_current_tenant, set_current_tenant
 
 
 class TenantMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-        self._jwt_auth = JWTAuthentication()
+        self._jwt_auth = CachingJWTAuthentication()
 
     def __call__(self, request):
         token = set_current_tenant(self._resolve_tenant(request))

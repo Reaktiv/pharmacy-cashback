@@ -40,6 +40,15 @@ FERNET_KEY = env("FERNET_KEY")
 
 REDIS_URL = env("REDIS_URL")
 
+# Separate logical DB from Celery's broker/result-backend above (same Redis
+# instance, different DB index) so a cache flush can't ever touch queued
+# tasks and vice versa. Django's cache framework has had a native Redis
+# backend since 4.0 — no extra dependency (django-redis) needed, and the
+# `redis` client package is already required for Celery's broker.
+CACHES = {
+    "default": env.cache("DJANGO_CACHE_URL", default=REDIS_URL.rsplit("/", 1)[0] + "/1"),
+}
+
 # Public HTTPS base URL Telegram will POST webhooks to (CLAUDE.md §7a). Telegram
 # requires HTTPS, so local dev needs a tunnel (e.g. ngrok) pointed at this host.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="https://example.com")
@@ -104,6 +113,8 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=60)
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -132,7 +143,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.tenants.authentication.CachingJWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",

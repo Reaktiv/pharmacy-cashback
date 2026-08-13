@@ -163,6 +163,16 @@ export interface SellerTransactionRow {
   flagged: boolean
 }
 
+export interface SellerTransactionsPage {
+  results: SellerTransactionRow[]
+  count: number
+  totals: {
+    check_amount: number
+    cashback_earned: number
+    cashback_spent: number
+  }
+}
+
 export interface MeProfile {
   username: string
   role: Role

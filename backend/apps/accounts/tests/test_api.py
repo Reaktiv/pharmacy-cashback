@@ -123,7 +123,9 @@ def test_tenant_admin_only_sees_their_own_branches(
 
 
 @pytest.mark.django_db
-def test_tenant_admin_can_delete_an_empty_branch(api_client_for, make_user, make_tenant, make_branch):
+def test_tenant_admin_can_delete_an_empty_branch(
+    api_client_for, make_user, make_tenant, make_branch
+):
     tenant = make_tenant("t")
     branch = make_branch(tenant)
     admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)

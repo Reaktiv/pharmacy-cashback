@@ -243,7 +243,7 @@ def test_earn_over_the_daily_transaction_limit_shows_an_error_instead_of_crashin
     )
 
     assert response.status_code == 200
-    assert "Kunlik tranzaksiya limiti".encode() in response.content
+    assert b"Kunlik tranzaksiya limiti" in response.content
     assert (
         Transaction.objects.all_tenants().filter(tenant=tenant, customer=customer).count() == 1
     )
@@ -265,7 +265,7 @@ def test_earn_over_the_max_check_amount_shows_an_error_instead_of_crashing(
     )
 
     assert response.status_code == 200
-    assert "maksimal".encode() in response.content
+    assert b"maksimal" in response.content
     assert Transaction.objects.all_tenants().filter(tenant=tenant).count() == 0
 
 
@@ -299,9 +299,49 @@ def test_redeem_over_the_daily_transaction_limit_shows_an_error_instead_of_crash
     )
 
     assert response.status_code == 200
-    assert "Kunlik tranzaksiya limiti".encode() in response.content
+    assert b"Kunlik tranzaksiya limiti" in response.content
     otp = OTP.objects.all_tenants().get(tenant=tenant, code="123456")
     assert otp.used is False
+
+
+@pytest.mark.django_db
+def test_redeem_is_rate_limited_after_repeated_attempts(
+    client, make_tenant, make_branch, make_seller, make_customer
+):
+    """A 6-digit OTP is guessable within its 5-minute expiry if attempts go
+    unbounded (apps.ledger.services.OTP_REDEEM_ATTEMPT_LIMIT) — this checks
+    the seller-web endpoint actually surfaces that limit as a friendly
+    error rather than letting guesses through indefinitely."""
+    from apps.ledger.services import OTP_REDEEM_ATTEMPT_LIMIT
+
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    make_customer(tenant)
+    client.login(username=seller.user.username, password="pass1234")
+
+    for i in range(OTP_REDEEM_ATTEMPT_LIMIT):
+        client.post(
+            "/seller/redeem/",
+            {
+                "check_amount": "100000",
+                "otp_code": "000000",
+                "idempotency_key": f"web-redeem-{i}",
+            },
+        )
+
+    response = client.post(
+        "/seller/redeem/",
+        {
+            "check_amount": "100000",
+            "otp_code": "000000",
+            "idempotency_key": "web-redeem-over-limit",
+        },
+        follow=True,
+    )
+
+    assert response.status_code == 200
+    assert b"urinish qilindi" in response.content
 
 
 @pytest.mark.django_db

@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Test-only values, not real secrets — safe to commit. A real deployment
+  # gets its own SECRET_KEY/FERNET_KEY from its own .env (see DEPLOY.md),
+  # never from here.
+  SECRET_KEY: ci-test-secret-key-not-for-production
+  FERNET_KEY: 0zBOh4MovkWYlFwgrZ3bTX_uCW9bAlzGX5wLqqqLz2E=
+  DEBUG: "False"
+  ALLOWED_HOSTS: localhost,127.0.0.1
+  DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+  REDIS_URL: redis://localhost:6379/0
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Required gate: the ledger/tenancy/fraud-limit test suite, including
+      # the mandatory tenant-isolation test (CLAUDE.md §4), must pass before
+      # anything merges to main.
+      - name: Run tests
+        run: python -m pytest backend -q
+
+      # Required gate: catches real bugs (unused imports, undefined names,
+      # bad exception chaining), not just style.
+      - name: Lint (ruff)
+        run: ruff check backend
+
+      # Informational only for now — there's an existing backlog of type
+      # errors (largely django-stubs/Django version drift, not necessarily
+      # 132 real bugs) that predates this workflow. Once that backlog is
+      # paid down, drop `continue-on-error` here so this becomes a real gate
+      # instead of a report.
+      - name: Type check (mypy) — informational, not yet blocking
+        run: mypy backend --config-file pyproject.toml
+        continue-on-error: true
+
+  frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint (oxlint)
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Type check + build
+        working-directory: frontend
+        run: npm run build

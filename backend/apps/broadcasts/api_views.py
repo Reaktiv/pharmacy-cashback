@@ -1,15 +1,23 @@
+from urllib.parse import quote
+
 from django.db import transaction
 from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
-from django.http import FileResponse
+from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.http import content_disposition_header
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsSuperadmin, IsTenantAdmin
 from apps.audit.services import log_action
-from apps.broadcasts.models import Broadcast, BroadcastMedia, PlatformBroadcast, PlatformBroadcastMedia
+from apps.broadcasts.models import (
+    Broadcast,
+    BroadcastMedia,
+    PlatformBroadcast,
+    PlatformBroadcastMedia,
+)
 from apps.broadcasts.serializers import (
     BroadcastMediaSerializer,
     BroadcastSerializer,
@@ -17,6 +25,23 @@ from apps.broadcasts.serializers import (
     PlatformBroadcastSerializer,
 )
 from apps.broadcasts.tasks import send_broadcast, send_platform_broadcast
+
+
+def _media_file_response(media) -> HttpResponse:
+    """Hands the actual bytes off to nginx via X-Accel-Redirect instead of
+    streaming them through this app process (see nginx/app.conf's
+    `/internal-media/` location, `internal` so it's unreachable except via
+    this header). The response Django sends here still carries the real
+    Content-Type/Content-Disposition — nginx only ever substitutes the
+    body — so the tenant-scoped auth check in `.get_object()` above the
+    call site remains the only way to reach a given file; nginx just
+    serves the bytes once that check has already passed."""
+    response = HttpResponse(content_type=media.content_type or "application/octet-stream")
+    response["X-Accel-Redirect"] = f"/internal-media/{quote(media.file.name)}"
+    disposition = content_disposition_header(False, media.original_filename or "media")
+    if disposition:
+        response["Content-Disposition"] = disposition
+    return response
 
 
 def _quota_exceeded(tenant) -> bool:
@@ -132,11 +157,7 @@ class BroadcastMediaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         media = self.get_object()
-        return FileResponse(
-            media.file.open("rb"),
-            content_type=media.content_type or "application/octet-stream",
-            filename=media.original_filename or "media",
-        )
+        return _media_file_response(media)
 
 
 class PlatformBroadcastViewSet(viewsets.ModelViewSet):
@@ -238,8 +259,4 @@ class PlatformBroadcastMediaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"])
     def file(self, request, pk=None):
         media = self.get_object()
-        return FileResponse(
-            media.file.open("rb"),
-            content_type=media.content_type or "application/octet-stream",
-            filename=media.original_filename or "media",
-        )
+        return _media_file_response(media)

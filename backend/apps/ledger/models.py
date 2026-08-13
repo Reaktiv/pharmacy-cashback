@@ -64,6 +64,24 @@ class Transaction(TenantScopedModel):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        indexes = [
+            # These three match the hot filter shapes exactly, not
+            # speculative coverage: services.py's daily seller-limit check,
+            # its daily customer-redemption-limit check, and every
+            # tenant+date-range report (dashboard "today's txns", daily
+            # earn/spend, seller-report date bounds). Without them, Postgres
+            # narrows via the FK's own index and then heap-scans the rest of
+            # that tenant/seller/customer's full history to apply the date
+            # filter — cost grows with total history, not with the size of
+            # the date window actually requested.
+            models.Index(
+                fields=["tenant", "seller", "created_at"], name="txn_tenant_seller_created_idx"
+            ),
+            models.Index(
+                fields=["tenant", "customer", "created_at"], name="txn_tenant_cust_created_idx"
+            ),
+            models.Index(fields=["tenant", "created_at"], name="txn_tenant_created_idx"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["tenant", "idempotency_key"], name="unique_txn_idempotency_per_tenant"

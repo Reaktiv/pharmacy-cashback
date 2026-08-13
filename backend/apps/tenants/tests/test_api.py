@@ -480,7 +480,9 @@ def test_broadcasts_sent_this_month_counts_only_this_tenants_sent_legs(
         tenant=other_tenant, title="C", body="c", created_by=admin, status=Broadcast.Status.SENT
     )
     # Does not count: a platform-broadcast leg (superadmin-originated).
-    platform_broadcast = PlatformBroadcast.objects.create(title="P", body="p", created_by=superadmin)
+    platform_broadcast = PlatformBroadcast.objects.create(
+        title="P", body="p", created_by=superadmin
+    )
     Broadcast.objects.all_tenants().create(
         tenant=tenant,
         title="D",

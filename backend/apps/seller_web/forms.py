@@ -65,7 +65,11 @@ class ProfileForm(forms.Form):
             raise forms.ValidationError(t(self._language, "profile_avatar_invalid_type"))
         if uploaded_file.size > AVATAR_MAX_BYTES:
             raise forms.ValidationError(
-                t(self._language, "profile_avatar_too_large", size=AVATAR_MAX_BYTES // (1024 * 1024))
+                t(
+                    self._language,
+                    "profile_avatar_too_large",
+                    size=AVATAR_MAX_BYTES // (1024 * 1024),
+                )
             )
         return uploaded_file
 

@@ -60,6 +60,25 @@ def test_global_settings_cannot_be_deleted():
 
 
 @pytest.mark.django_db
+def test_global_settings_load_is_cached_after_the_first_call(django_assert_num_queries):
+    GlobalSettings.load()  # first call: cache miss, hits the DB
+
+    with django_assert_num_queries(0):
+        GlobalSettings.load()
+
+
+@pytest.mark.django_db
+def test_saving_global_settings_invalidates_the_cache(django_assert_num_queries):
+    settings = GlobalSettings.load()
+    settings.max_cashback_rate = Decimal("7.00")
+    settings.save()
+
+    with django_assert_num_queries(1):
+        reloaded = GlobalSettings.load()
+    assert reloaded.max_cashback_rate == Decimal("7.00")
+
+
+@pytest.mark.django_db
 def test_bot_token_is_never_stored_in_plaintext():
     tenant = Tenant.objects.create(name="Dorimed", slug="dorimed", cashback_rate=Decimal("5.00"))
     bot = Bot(tenant=tenant, username="@dorimed_bot")

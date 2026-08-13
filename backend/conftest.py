@@ -5,7 +5,20 @@ from apps.accounts.models import Branch, Seller, UserProfile
 from apps.customers.models import Customer
 from apps.tenants.models import Tenant
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from rest_framework.test import APIClient
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """The Django cache (GlobalSettings.load(), see apps.tenants.models) is
+    a real shared Redis instance, not per-test DB state — Django's usual
+    per-test transaction rollback doesn't touch it. Without this, a value
+    cached by one test (e.g. GlobalSettings, always pk=1) would leak into
+    the next test's assertions."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture

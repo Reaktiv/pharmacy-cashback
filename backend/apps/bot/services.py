@@ -54,7 +54,12 @@ def get_customer_language(*, tenant: Tenant, telegram_id: int) -> str:
 
 
 def handle_registration(
-    *, tenant: Tenant, telegram_id: int, phone: str, full_name: str, language: str = DEFAULT_LANGUAGE
+    *,
+    tenant: Tenant,
+    telegram_id: int,
+    phone: str,
+    full_name: str,
+    language: str = DEFAULT_LANGUAGE,
 ) -> str:
     """CLAUDE.md §7a: register/claim PendingCashback on /start + contact +
     consent. Returns the fully-formatted reply text."""
@@ -159,7 +164,12 @@ def format_notification_text(txn: Transaction) -> str:
         parts = []
         if txn.cashback_earned > 0:
             parts.append(
-                t(language, "notif_earned", check_amount=txn.check_amount, earned=txn.cashback_earned)
+                t(
+                    language,
+                    "notif_earned",
+                    check_amount=txn.check_amount,
+                    earned=txn.cashback_earned,
+                )
             )
         if txn.cashback_spent > 0:
             parts.append(t(language, "notif_spent", spent=txn.cashback_spent))

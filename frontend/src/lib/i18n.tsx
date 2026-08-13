@@ -672,6 +672,8 @@ const STRINGS = {
   reports_pie_cashback_used: { uz: 'Ishlatilgan keshbek', en: 'Cashback redeemed', ru: 'Использовано кешбэка' },
   sub_som_total: { uz: "so'm, jami", en: 'UZS, total', ru: 'сум, всего' },
   reports_stat_flagged: { uz: 'Shubhali tranzaksiyalar', en: 'Flagged transactions', ru: 'Подозрительные транзакции' },
+  reports_load_more: { uz: "Yana yuklash", en: 'Load more', ru: 'Загрузить ещё' },
+  reports_loading_more: { uz: 'Yuklanmoqda...', en: 'Loading...', ru: 'Загрузка...' },
   reports_stat_flagged_sub: { uz: 'barcha sotuvchilar bo\'yicha', en: 'across all sellers', ru: 'по всем продавцам' },
   reports_sellers_heading: { uz: 'Sotuvchilar', en: 'Sellers', ru: 'Продавцы' },
   reports_sellers_description: {

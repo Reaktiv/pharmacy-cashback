@@ -28,7 +28,11 @@ _STRINGS = {
     "page_title": {"uz": "Sotuvchi kassasi", "en": "Seller till", "ru": "Касса продавца"},
     "brand_subtitle": {"uz": "Sotuvchi kirishi", "en": "Seller sign-in", "ru": "Вход продавца"},
     "login_page_title": {"uz": "Kirish", "en": "Sign in", "ru": "Вход"},
-    "login_heading": {"uz": "Sotuvchi tizimga kirishi", "en": "Seller sign-in", "ru": "Вход продавца"},
+    "login_heading": {
+        "uz": "Sotuvchi tizimga kirishi",
+        "en": "Seller sign-in",
+        "ru": "Вход продавца",
+    },
     "login_subheading": {
         "uz": "Kassa sahifasiga o'tish uchun hisobingizga kiring.",
         "en": "Sign in to your account to open the till page.",
@@ -39,11 +43,24 @@ _STRINGS = {
     "login_submit": {"uz": "Kirish", "en": "Sign in", "ru": "Войти"},
 
     "logout": {"uz": "Chiqish", "en": "Log out", "ru": "Выйти"},
-    "logout_confirm_title": {"uz": "Tizimdan chiqasizmi?", "en": "Log out?", "ru": "Выйти из системы?"},
+    "logout_confirm_title": {
+        "uz": "Tizimdan chiqasizmi?",
+        "en": "Log out?",
+        "ru": "Выйти из системы?",
+    },
     "logout_confirm_description": {
-        "uz": "Joriy sessiyangiz yakunlanadi va qayta kirish uchun login/parolni kiritishingiz kerak bo'ladi.",
-        "en": "Your current session will end and you will need to enter your login/password to sign in again.",
-        "ru": "Текущая сессия завершится, и для повторного входа потребуется ввести логин и пароль.",
+        "uz": (
+            "Joriy sessiyangiz yakunlanadi va qayta kirish uchun login/parolni "
+            "kiritishingiz kerak bo'ladi."
+        ),
+        "en": (
+            "Your current session will end and you will need to enter your "
+            "login/password to sign in again."
+        ),
+        "ru": (
+            "Текущая сессия завершится, и для повторного входа потребуется "
+            "ввести логин и пароль."
+        ),
     },
     "cancel": {"uz": "Bekor qilish", "en": "Cancel", "ru": "Отмена"},
 
@@ -61,9 +78,17 @@ _STRINGS = {
         "en": "No cashback (prescription only)",
         "ru": "Без кешбэка (только по рецепту)",
     },
-    "record_sale_button": {"uz": "Sotuvni qayd etish", "en": "Record the sale", "ru": "Записать продажу"},
+    "record_sale_button": {
+        "uz": "Sotuvni qayd etish",
+        "en": "Record the sale",
+        "ru": "Записать продажу",
+    },
 
-    "redeem_legend": {"uz": "Ballarni ishlatish", "en": "Redeem points", "ru": "Использовать баллы"},
+    "redeem_legend": {
+        "uz": "Ballarni ishlatish",
+        "en": "Redeem points",
+        "ru": "Использовать баллы",
+    },
     "otp_code_label": {"uz": "OTP kod", "en": "OTP code", "ru": "OTP-код"},
     "redeem_button": {"uz": "Ishlatish", "en": "Redeem", "ru": "Использовать"},
 
@@ -85,9 +110,18 @@ _STRINGS = {
         "ru": "Начислено {earned} баллов. Новый баланс: {balance}.",
     },
     "earn_success_pending": {
-        "uz": "Mijoz hali ro'yxatdan o'tmagan — botga qo'shilgach {amount} ball hisobiga qo'shiladi.",
-        "en": "The customer isn't registered yet — {amount} points will be credited once they join the bot.",
-        "ru": "Клиент ещё не зарегистрирован — {amount} баллов будут начислены после подключения к боту.",
+        "uz": (
+            "Mijoz hali ro'yxatdan o'tmagan — botga qo'shilgach {amount} ball "
+            "hisobiga qo'shiladi."
+        ),
+        "en": (
+            "The customer isn't registered yet — {amount} points will be "
+            "credited once they join the bot."
+        ),
+        "ru": (
+            "Клиент ещё не зарегистрирован — {amount} баллов будут начислены "
+            "после подключения к боту."
+        ),
     },
     "earn_success_no_cashback": {
         "uz": "Sotuv qayd etildi. Keshbek berilmadi.",
@@ -112,7 +146,11 @@ _STRINGS = {
     "profile_full_name_label": {"uz": "To'liq ismi", "en": "Full name", "ru": "Полное имя"},
     "profile_phone_label": {"uz": "Telefon raqami", "en": "Phone number", "ru": "Номер телефона"},
     "profile_change_photo": {"uz": "Rasm tanlash", "en": "Change photo", "ru": "Изменить фото"},
-    "profile_remove_photo": {"uz": "Rasmni olib tashlash", "en": "Remove photo", "ru": "Удалить фото"},
+    "profile_remove_photo": {
+        "uz": "Rasmni olib tashlash",
+        "en": "Remove photo",
+        "ru": "Удалить фото",
+    },
     "profile_save_button": {"uz": "Saqlash", "en": "Save", "ru": "Сохранить"},
     "profile_back_link": {"uz": "Kassaga qaytish", "en": "Back to the till", "ru": "Назад к кассе"},
     "profile_saved": {"uz": "Profil saqlandi.", "en": "Profile saved.", "ru": "Профиль сохранён."},
@@ -138,7 +176,11 @@ _STRINGS = {
         "en": "Change password",
         "ru": "Смена пароля",
     },
-    "current_password_label": {"uz": "Joriy parol", "en": "Current password", "ru": "Текущий пароль"},
+    "current_password_label": {
+        "uz": "Joriy parol",
+        "en": "Current password",
+        "ru": "Текущий пароль",
+    },
     "new_password_label": {"uz": "Yangi parol", "en": "New password", "ru": "Новый пароль"},
     "confirm_new_password_label": {
         "uz": "Yangi parolni takrorlang",

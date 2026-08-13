@@ -140,7 +140,11 @@ class TenantViewSet(viewsets.ModelViewSet):
             action="tenant_deleted",
             target_type="Tenant",
             target_id=instance.id,
-            metadata={"name": instance.name, "slug": instance.slug, "transactions_deleted": txn_count},
+            metadata={
+                "name": instance.name,
+                "slug": instance.slug,
+                "transactions_deleted": txn_count,
+            },
         )
         instance.delete()
 

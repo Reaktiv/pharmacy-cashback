@@ -220,9 +220,11 @@ def test_branch_manager_can_view_their_own_sellers_transaction_history(
     response = client.get(f"/api/reports/seller-transactions/?seller_id={seller.pk}")
 
     assert response.status_code == 200
-    assert len(response.data) == 1
-    assert response.data[0]["customer_phone"] == "+998900000001"
-    assert response.data[0]["cashback_earned"] == Decimal("10000.00")
+    assert response.data["count"] == 1
+    assert len(response.data["results"]) == 1
+    assert response.data["results"][0]["customer_phone"] == "+998900000001"
+    assert response.data["results"][0]["cashback_earned"] == Decimal("10000.00")
+    assert response.data["totals"]["cashback_earned"] == Decimal("10000.00")
 
 
 @pytest.mark.django_db
@@ -248,6 +250,57 @@ def test_branch_manager_cannot_view_another_branchs_seller_transaction_history(
     response = client.get(f"/api/reports/seller-transactions/?seller_id={seller_b.pk}")
 
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_seller_transactions_are_paginated_with_accurate_totals(
+    api_client_for, make_user, make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+    for i in range(3):
+        post_earn_transaction(
+            tenant=tenant,
+            branch=branch,
+            seller=seller,
+            customer=customer,
+            check_amount=Decimal("100000"),
+            idempotency_key=f"k{i}",
+        )
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get(
+        f"/api/reports/seller-transactions/?seller_id={seller.pk}&limit=2&offset=0"
+    )
+
+    assert response.status_code == 200
+    assert response.data["count"] == 3
+    assert len(response.data["results"]) == 2
+    # Totals reflect all 3 transactions, not just the 2 returned on this page.
+    assert response.data["totals"]["cashback_earned"] == Decimal("30000.00")
+
+    next_page = client.get(
+        f"/api/reports/seller-transactions/?seller_id={seller.pk}&limit=2&offset=2"
+    )
+    assert len(next_page.data["results"]) == 1
+
+
+@pytest.mark.django_db
+def test_seller_transactions_rejects_out_of_range_limit(
+    api_client_for, make_user, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get(f"/api/reports/seller-transactions/?seller_id={seller.pk}&limit=9999")
+
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db

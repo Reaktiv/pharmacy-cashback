@@ -138,6 +138,44 @@ def test_cross_tenant_dashboard_status_inactive_without_bot(make_tenant):
 
 
 @pytest.mark.django_db
+def test_cross_tenant_dashboard_query_count_does_not_scale_with_tenant_count(
+    django_assert_num_queries, make_tenant, make_branch, make_seller, make_customer
+):
+    """get_cross_tenant_dashboard() must stay at a flat number of queries as
+    tenants are added — it batches each metric into one GROUP BY tenant_id
+    query instead of looping per tenant, so N tenants shouldn't cost more
+    queries than 1 tenant."""
+
+    def _seed_tenant(slug):
+        tenant = make_tenant(slug, rate=Decimal("10.00"))
+        branch = make_branch(tenant)
+        seller = make_seller(tenant, branch)
+        customer = make_customer(tenant, phone=f"+99890000{slug}00")
+        Bot.objects.all_tenants().create(tenant=tenant, username=f"@{slug}_bot", is_active=True)
+        post_earn_transaction(
+            tenant=tenant,
+            branch=branch,
+            seller=seller,
+            customer=customer,
+            check_amount=Decimal("100000"),
+            idempotency_key=f"{slug}-1",
+        )
+
+    _seed_tenant("0001")
+
+    with django_assert_num_queries(6):
+        rows = get_cross_tenant_dashboard()
+    assert len(rows) == 1
+
+    _seed_tenant("0002")
+    _seed_tenant("0003")
+
+    with django_assert_num_queries(6):
+        rows = get_cross_tenant_dashboard()
+    assert len(rows) == 3
+
+
+@pytest.mark.django_db
 def test_branch_report_computes_outstanding_per_branch(
     make_tenant, make_branch, make_seller, make_customer
 ):
@@ -245,10 +283,37 @@ def test_seller_transactions_returns_full_history_newest_first(
         idempotency_key="k3",
     )
 
-    rows = get_seller_transactions(tenant=tenant, seller_id=seller.pk)
+    page = get_seller_transactions(tenant=tenant, seller_id=seller.pk)
 
-    assert [row.pk for row in rows] == [txn2.pk, txn1.pk]
-    assert rows[0].customer.phone == "+998900000009"
+    assert [row.pk for row in page.results] == [txn2.pk, txn1.pk]
+    assert page.results[0].customer.phone == "+998900000009"
+    assert page.count == 2
+
+
+@pytest.mark.django_db
+def test_seller_transactions_page_totals_cover_full_history_not_just_the_page(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+    for i in range(3):
+        post_earn_transaction(
+            tenant=tenant,
+            branch=branch,
+            seller=seller,
+            customer=customer,
+            check_amount=Decimal("100000"),
+            idempotency_key=f"k{i}",
+        )
+
+    page = get_seller_transactions(tenant=tenant, seller_id=seller.pk, limit=1, offset=0)
+
+    assert len(page.results) == 1
+    assert page.count == 3
+    assert page.total_cashback_earned == Decimal("30000.00")
+    assert page.total_check_amount == Decimal("300000.00")
 
 
 @pytest.mark.django_db

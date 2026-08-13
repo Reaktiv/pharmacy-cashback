@@ -2,9 +2,13 @@ from decimal import Decimal
 
 import pytest
 
+from apps.accounts.ratelimit import RateLimitExceededError
+from apps.customers.models import OTP
 from apps.ledger.services import (
+    OTP_REDEEM_ATTEMPT_LIMIT,
     DailyRedemptionLimitExceededError,
     DailyTransactionLimitExceededError,
+    InvalidOTPError,
     MaxCheckAmountExceededError,
     post_earn_by_phone,
     post_earn_transaction,
@@ -193,8 +197,6 @@ def test_customer_daily_redemption_limit_is_enforced(
         idempotency_key="seed",
     )
 
-    from apps.customers.models import OTP
-
     for i in range(2):
         otp = OTP.objects.all_tenants().create(
             tenant=tenant, customer=customer, code=f"11111{i}", amount_requested=Decimal("1000")
@@ -219,4 +221,74 @@ def test_customer_daily_redemption_limit_is_enforced(
             otp_code=otp.code,
             check_amount=Decimal("20000"),
             idempotency_key="redeem-over",
+        )
+
+
+@pytest.mark.django_db
+def test_many_successful_redemptions_by_one_seller_are_never_rate_limited(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    """The OTP-guess rate limit (apps.ledger.services.OTP_REDEEM_ATTEMPT_LIMIT)
+    must only count failed attempts — a seller processing more than that
+    many *valid* redemptions in a row (each for a different customer, so
+    the per-customer daily-redemption cap never comes into play) must never
+    get blocked."""
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+
+    for i in range(OTP_REDEEM_ATTEMPT_LIMIT + 5):
+        customer = make_customer(tenant, phone=f"+99890111{i:04d}")
+        post_earn_transaction(
+            tenant=tenant,
+            branch=branch,
+            seller=seller,
+            customer=customer,
+            check_amount=Decimal("1000000"),
+            idempotency_key=f"seed-{i}",
+        )
+        otp = OTP.objects.all_tenants().create(
+            tenant=tenant, customer=customer, code=f"{i:06d}", amount_requested=Decimal("1000")
+        )
+
+        txn = redeem_via_otp(
+            tenant=tenant,
+            branch=branch,
+            seller=seller,
+            otp_code=otp.code,
+            check_amount=Decimal("20000"),
+            idempotency_key=f"redeem-{i}",
+        )
+
+        assert txn.cashback_spent == Decimal("1000.00")
+
+
+@pytest.mark.django_db
+def test_repeated_invalid_otp_guesses_get_rate_limited(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    make_customer(tenant)
+
+    for i in range(OTP_REDEEM_ATTEMPT_LIMIT):
+        with pytest.raises(InvalidOTPError):
+            redeem_via_otp(
+                tenant=tenant,
+                branch=branch,
+                seller=seller,
+                otp_code="000000",
+                check_amount=Decimal("100000"),
+                idempotency_key=f"guess-{i}",
+            )
+
+    with pytest.raises(RateLimitExceededError):
+        redeem_via_otp(
+            tenant=tenant,
+            branch=branch,
+            seller=seller,
+            otp_code="000000",
+            check_amount=Decimal("100000"),
+            idempotency_key="guess-over",
         )

@@ -35,7 +35,13 @@ from aiogram.types import (
 from asgiref.sync import sync_to_async
 
 from apps.bot import services as bot_services
-from apps.bot.i18n import CHOOSE_LANGUAGE_PROMPT, DEFAULT_LANGUAGE, LANGUAGE_LABELS, button_labels, t
+from apps.bot.i18n import (
+    CHOOSE_LANGUAGE_PROMPT,
+    DEFAULT_LANGUAGE,
+    LANGUAGE_LABELS,
+    button_labels,
+    t,
+)
 from apps.bot.states import RedeemStates, SettingsStates
 
 REGISTRATION_LANGUAGE_PREFIX = "reglang"
@@ -125,10 +131,15 @@ async def cmd_start(message: Message, tenant, bot_row) -> None:
         )
         return
 
-    await message.answer(CHOOSE_LANGUAGE_PROMPT, reply_markup=_language_keyboard(REGISTRATION_LANGUAGE_PREFIX))
+    await message.answer(
+        CHOOSE_LANGUAGE_PROMPT,
+        reply_markup=_language_keyboard(REGISTRATION_LANGUAGE_PREFIX),
+    )
 
 
-async def on_registration_language_select(callback: CallbackQuery, tenant, bot_row, state: FSMContext) -> None:
+async def on_registration_language_select(
+    callback: CallbackQuery, tenant, bot_row, state: FSMContext
+) -> None:
     data = callback.data or ""
     language = data.split(":", 1)[1] if ":" in data else DEFAULT_LANGUAGE
     if language not in LANGUAGE_LABELS:
@@ -162,7 +173,9 @@ async def on_contact(message: Message, tenant, bot_row, state: FSMContext) -> No
         t(language, "consent_text"),
         reply_markup=ReplyKeyboardRemove(),
     )
-    await message.answer(t(language, "consent_confirm_prompt"), reply_markup=_consent_keyboard(language))
+    await message.answer(
+        t(language, "consent_confirm_prompt"), reply_markup=_consent_keyboard(language)
+    )
 
 
 async def on_consent_accept(callback: CallbackQuery, tenant, bot_row, state: FSMContext) -> None:
@@ -234,10 +247,14 @@ async def on_settings_start(message: Message, tenant, bot_row) -> None:
     if not is_registered:
         await message.answer(t(language, "not_registered"))
         return
-    await message.answer(t(language, "settings_menu_prompt"), reply_markup=_settings_keyboard(language))
+    await message.answer(
+        t(language, "settings_menu_prompt"), reply_markup=_settings_keyboard(language)
+    )
 
 
-async def on_settings_change_name_prompt(callback: CallbackQuery, tenant, bot_row, state: FSMContext) -> None:
+async def on_settings_change_name_prompt(
+    callback: CallbackQuery, tenant, bot_row, state: FSMContext
+) -> None:
     language = await sync_to_async(bot_services.get_customer_language, thread_sensitive=True)(
         tenant=tenant, telegram_id=callback.from_user.id
     )

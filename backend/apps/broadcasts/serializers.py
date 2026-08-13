@@ -1,7 +1,12 @@
 from django.urls import reverse
 from rest_framework import serializers
 
-from apps.broadcasts.models import Broadcast, BroadcastMedia, PlatformBroadcast, PlatformBroadcastMedia
+from apps.broadcasts.models import (
+    Broadcast,
+    BroadcastMedia,
+    PlatformBroadcast,
+    PlatformBroadcastMedia,
+)
 from apps.broadcasts.sanitizer import (
     plain_text_length,
     render_broadcast_message_html,
@@ -182,7 +187,10 @@ class PlatformBroadcastSerializer(serializers.ModelSerializer):
 
     media = PlatformBroadcastMediaSerializer(read_only=True)
     media_id = serializers.PrimaryKeyRelatedField(
-        source="media", queryset=PlatformBroadcastMedia.objects.all(), required=False, allow_null=True
+        source="media",
+        queryset=PlatformBroadcastMedia.objects.all(),
+        required=False,
+        allow_null=True,
     )
     sent_count = serializers.IntegerField(read_only=True)
     failed_count = serializers.IntegerField(read_only=True)

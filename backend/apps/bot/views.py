@@ -59,10 +59,10 @@ async def webhook(request, webhook_secret: str) -> HttpResponse:
     except Exception:
         logger.exception("Unhandled error processing Telegram update for tenant %s", tenant.id)
     finally:
-        # Close the per-request Redis connection while its event loop is
-        # still alive — see apps/bot/dispatcher.py for why storage is
-        # rebuilt fresh each request instead of reused.
-        await dp.storage.close()
+        # dp.storage is no longer closed here — build_dispatcher (see
+        # apps/bot/dispatcher.py) now reuses the same Dispatcher/storage
+        # across requests on the same event loop, so closing it after
+        # every request would break the very next one.
         reset_current_tenant(token)
 
     return HttpResponse(status=200)

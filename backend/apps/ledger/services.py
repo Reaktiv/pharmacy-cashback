@@ -17,9 +17,16 @@ from django.db.models import Avg, Count, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Seller
+from apps.accounts.ratelimit import peek_rate_limit, record_failed_attempt
 from apps.customers.models import OTP, Customer, PendingCashback
 from apps.ledger.models import Transaction
 from apps.tenants.models import GlobalSettings, Tenant
+
+# A live OTP is a 6-digit code guessable within its own 5-minute expiry if
+# attempts go unbounded — this caps how many redeem attempts one seller
+# account can make in that window, regardless of whether each guess hits.
+OTP_REDEEM_ATTEMPT_LIMIT = 10
+OTP_REDEEM_ATTEMPT_WINDOW_SECONDS = 300
 
 
 def _notify_transaction(transaction_id: int) -> None:
@@ -369,44 +376,58 @@ def redeem_via_otp(
     any earn on the residual cash-paid portion, via the same
     post_earn_transaction used by the plain earn flow (§5: a single register
     action can both spend and earn).
+
+    Rate-limited against OTP guessing (CLAUDE.md §8), but only failed
+    attempts count — peek_rate_limit() rejects up front without touching
+    the counter, and record_failed_attempt() only fires from the except
+    block below. A busy seller doing many *valid* redemptions in a row
+    must never get throttled for it; only wrong-code/insufficient-balance
+    guesses should burn down the allowance.
     """
-    with db_transaction.atomic():
-        otp = (
-            OTP.objects.all_tenants()
-            .select_for_update()
-            .filter(tenant=tenant, code=otp_code, used=False)
-            .first()
-        )
-        if otp is None:
-            raise InvalidOTPError(
-                "OTP kod topilmadi, allaqachon ishlatilgan yoki boshqa tarmoqqa tegishli."
+    otp_attempt_key = f"otp_redeem_attempts:{seller.id}"
+    peek_rate_limit(key=otp_attempt_key, limit=OTP_REDEEM_ATTEMPT_LIMIT)
+
+    try:
+        with db_transaction.atomic():
+            otp = (
+                OTP.objects.all_tenants()
+                .select_for_update()
+                .filter(tenant=tenant, code=otp_code, used=False)
+                .first()
             )
-        if otp.is_expired():
-            raise InvalidOTPError("OTP kod muddati tugagan.")
+            if otp is None:
+                raise InvalidOTPError(
+                    "OTP kod topilmadi, allaqachon ishlatilgan yoki boshqa tarmoqqa tegishli."
+                )
+            if otp.is_expired():
+                raise InvalidOTPError("OTP kod muddati tugagan.")
 
-        customer = Customer.objects.all_tenants().get(pk=otp.customer_id, tenant=tenant)
-        check_daily_redemption_limit(tenant=tenant, customer=customer)
-        balance = get_balance(customer)
-        allowed = calculate_redemption(check_amount, otp.amount_requested, balance, tenant)
-        if allowed <= 0:
-            raise InvalidOTPError(
-                "Ishlatib bo'lmaydi: chek summasi tarmoq minimumidan past, "
-                "yoki balans yetarli emas."
+            customer = Customer.objects.all_tenants().get(pk=otp.customer_id, tenant=tenant)
+            check_daily_redemption_limit(tenant=tenant, customer=customer)
+            balance = get_balance(customer)
+            allowed = calculate_redemption(check_amount, otp.amount_requested, balance, tenant)
+            if allowed <= 0:
+                raise InvalidOTPError(
+                    "Ishlatib bo'lmaydi: chek summasi tarmoq minimumidan past, "
+                    "yoki balans yetarli emas."
+                )
+
+            txn = post_earn_transaction(
+                tenant=tenant,
+                branch=branch,
+                seller=seller,
+                customer=customer,
+                check_amount=check_amount,
+                cashback_spent=allowed,
+                no_cashback=no_cashback,
+                idempotency_key=idempotency_key,
             )
 
-        txn = post_earn_transaction(
-            tenant=tenant,
-            branch=branch,
-            seller=seller,
-            customer=customer,
-            check_amount=check_amount,
-            cashback_spent=allowed,
-            no_cashback=no_cashback,
-            idempotency_key=idempotency_key,
-        )
-
-        otp.used = True
-        otp.save(update_fields=["used"])
+            otp.used = True
+            otp.save(update_fields=["used"])
+    except (InvalidOTPError, InsufficientBalanceError):
+        record_failed_attempt(key=otp_attempt_key, window_seconds=OTP_REDEEM_ATTEMPT_WINDOW_SECONDS)
+        raise
 
     return txn
 

@@ -140,8 +140,8 @@ Docker-exposed backend port) — see `VITE_API_PROXY_TARGET` in
 
 `docker-compose.yml` is dev-only (Django's `runserver`, Vite's dev server —
 neither is meant to face the internet). For a real server behind a domain
-with HTTPS, use `docker-compose.prod.yml` (gunicorn+uvicorn, a built
-frontend served by nginx, Let's Encrypt via certbot). See
+with HTTPS, use `docker-compose.prod.yml` (uvicorn, a built frontend
+served by nginx, Let's Encrypt via certbot). See
 [`DEPLOY.md`](./DEPLOY.md) for the full step-by-step.
 
 ## Adding a tenant + bot
@@ -199,8 +199,8 @@ pharmacy-cashback/
     tests/
   frontend/                 # React admin panel (Vite + TS)
   docker-compose.yml        # dev stack (runserver, vite dev server)
-  docker-compose.prod.yml   # production stack (gunicorn+uvicorn, built
-                             # frontend behind nginx+TLS) — see DEPLOY.md
+  docker-compose.prod.yml   # production stack (uvicorn, built frontend
+                             # behind nginx+TLS) — see DEPLOY.md
   README.md
 ```
 

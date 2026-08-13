@@ -119,6 +119,31 @@ def test_tenant_admin_can_fetch_their_own_media_file(api_client_for, make_user, 
 
 
 @pytest.mark.django_db
+def test_file_action_hands_off_to_nginx_via_x_accel_redirect(
+    api_client_for, make_user, make_tenant
+):
+    """The app process must not stream the bytes itself — it should return
+    an empty body and let X-Accel-Redirect point nginx at the real file
+    (nginx/app.conf's internal /internal-media/ location). The tenant-scope
+    check happens in get_object() before this header is ever set, same as
+    before."""
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    upload = client.post("/api/broadcast-media/", {"file": _tiny_png()}, format="multipart")
+    media_id = upload.data["id"]
+    media = BroadcastMedia.objects.all_tenants().get(pk=media_id)
+
+    response = client.get(f"/api/broadcast-media/{media_id}/file/")
+
+    assert response.status_code == 200
+    assert response["X-Accel-Redirect"] == f"/internal-media/{media.file.name}"
+    assert response.content == b""
+    assert response["Content-Type"] == "image/png"
+    assert 'filename="pic.png"' in response["Content-Disposition"]
+
+
+@pytest.mark.django_db
 def test_tenant_admin_cannot_attach_another_tenants_media_to_a_broadcast(
     api_client_for, make_user, make_tenant
 ):

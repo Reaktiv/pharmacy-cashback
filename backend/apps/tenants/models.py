@@ -3,11 +3,15 @@ import secrets
 import uuid
 from decimal import Decimal
 
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.tenants.context import get_current_tenant, tenant_check_bypassed
 from apps.tenants.crypto import decrypt_token, encrypt_token
+
+GLOBAL_SETTINGS_CACHE_KEY = "tenants:global_settings"
+GLOBAL_SETTINGS_CACHE_TTL = 300  # seconds; save() below invalidates eagerly on every write
 
 
 def platform_logo_upload_path(instance: "GlobalSettings", filename: str) -> str:
@@ -108,13 +112,22 @@ class GlobalSettings(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1
         super().save(*args, **kwargs)
+        cache.delete(GLOBAL_SETTINGS_CACHE_KEY)
 
     def delete(self, *args, **kwargs):
         raise RuntimeError("GlobalSettings is a singleton and cannot be deleted.")
 
     @classmethod
     def load(cls) -> "GlobalSettings":
-        obj, _ = cls.objects.get_or_create(pk=1)
+        """apps.ledger.services calls this on every earn/redeem to check
+        hard limits (CLAUDE.md §8), so it's cached rather than hitting the
+        DB each time. save() above deletes the cache entry on every write,
+        so changes apply to the very next call; the TTL here is only a
+        safety net in case some future write path ever bypasses save()."""
+        obj = cache.get(GLOBAL_SETTINGS_CACHE_KEY)
+        if obj is None:
+            obj, _ = cls.objects.get_or_create(pk=1)
+            cache.set(GLOBAL_SETTINGS_CACHE_KEY, obj, GLOBAL_SETTINGS_CACHE_TTL)
         return obj
 
     def __str__(self):

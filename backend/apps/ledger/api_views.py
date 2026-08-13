@@ -7,6 +7,7 @@ from apps.accounts.permissions import IsBranchManager, IsSuperadmin, IsTenantAdm
 from apps.audit.services import log_action
 from apps.ledger.models import Transaction
 from apps.ledger.reports import (
+    DEFAULT_SELLER_TRANSACTIONS_PAGE_SIZE,
     get_branch_report,
     get_cross_tenant_dashboard,
     get_daily_earn_spend_report,
@@ -16,6 +17,8 @@ from apps.ledger.reports import (
 from apps.ledger.serializers import ReversalRequestSerializer, TransactionSerializer
 from apps.ledger.services import post_reversal
 from apps.tenants.models import Tenant
+
+MAX_SELLER_TRANSACTIONS_LIMIT = 500
 
 
 def _resolve_report_tenant(request):
@@ -163,23 +166,49 @@ class SellerTransactionsView(APIView):
         ):
             return Response({"detail": "Seller not found."}, status=404)
 
-        data = [
+        try:
+            limit = int(request.query_params.get("limit", DEFAULT_SELLER_TRANSACTIONS_PAGE_SIZE))
+            offset = int(request.query_params.get("offset", 0))
+        except ValueError as exc:
+            raise ValidationError(
+                {"limit": "Must be an integer.", "offset": "Must be an integer."}
+            ) from exc
+        if limit < 1 or limit > MAX_SELLER_TRANSACTIONS_LIMIT:
+            raise ValidationError(
+                {"limit": f"Must be between 1 and {MAX_SELLER_TRANSACTIONS_LIMIT}."}
+            )
+        if offset < 0:
+            raise ValidationError({"offset": "Must be non-negative."})
+
+        page = get_seller_transactions(
+            tenant=tenant, seller_id=seller.id, limit=limit, offset=offset
+        )
+        return Response(
             {
-                "id": txn.id,
-                "created_at": txn.created_at,
-                "customer_phone": txn.customer.phone,
-                "check_amount": txn.check_amount,
-                "cash_paid": txn.cash_paid,
-                "cashback_earned": txn.cashback_earned,
-                "cashback_spent": txn.cashback_spent,
-                "no_cashback": txn.no_cashback,
-                "type": txn.type,
-                "status": txn.status,
-                "flagged": txn.flagged,
+                "results": [
+                    {
+                        "id": txn.id,
+                        "created_at": txn.created_at,
+                        "customer_phone": txn.customer.phone,
+                        "check_amount": txn.check_amount,
+                        "cash_paid": txn.cash_paid,
+                        "cashback_earned": txn.cashback_earned,
+                        "cashback_spent": txn.cashback_spent,
+                        "no_cashback": txn.no_cashback,
+                        "type": txn.type,
+                        "status": txn.status,
+                        "flagged": txn.flagged,
+                    }
+                    for txn in page.results
+                ],
+                "count": page.count,
+                "totals": {
+                    "check_amount": page.total_check_amount,
+                    "cashback_earned": page.total_cashback_earned,
+                    "cashback_spent": page.total_cashback_spent,
+                },
             }
-            for txn in get_seller_transactions(tenant=tenant, seller_id=seller.id)
-        ]
-        return Response(data)
+        )
 
 
 class DailyEarnSpendReportView(APIView):

@@ -1,7 +1,13 @@
 import { Fragment, useEffect, useState } from 'react'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import type { BranchReportRow, DailyReportRow, SellerReportRow, SellerTransactionRow } from '../api/types'
+import type {
+  BranchReportRow,
+  DailyReportRow,
+  SellerReportRow,
+  SellerTransactionRow,
+  SellerTransactionsPage,
+} from '../api/types'
 import { useLanguage, type TFunction } from '../lib/i18n'
 import StatCard from '../components/StatCard'
 import EmptyState from '../components/EmptyState'
@@ -36,18 +42,34 @@ function txnTypeLabel(row: SellerTransactionRow, t: TFunction): string {
   return t('txn_type_sale')
 }
 
+const SELLER_HISTORY_PAGE_SIZE = 100
+
 function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
   const { t } = useLanguage()
-  const [txns, setTxns] = useState<SellerTransactionRow[] | null>(null)
+  const [page, setPage] = useState<SellerTransactionsPage | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
-    setTxns(null)
+    setPage(null)
     setError(null)
-    apiFetch<SellerTransactionRow[]>(`/api/reports/seller-transactions/?seller_id=${sellerId}`)
-      .then(setTxns)
+    apiFetch<SellerTransactionsPage>(
+      `/api/reports/seller-transactions/?seller_id=${sellerId}&limit=${SELLER_HISTORY_PAGE_SIZE}`
+    )
+      .then(setPage)
       .catch((err) => setError(err.message))
   }, [sellerId])
+
+  const loadMore = () => {
+    if (!page || loadingMore) return
+    setLoadingMore(true)
+    apiFetch<SellerTransactionsPage>(
+      `/api/reports/seller-transactions/?seller_id=${sellerId}&limit=${SELLER_HISTORY_PAGE_SIZE}&offset=${page.results.length}`
+    )
+      .then((next) => setPage({ ...next, results: [...page.results, ...next.results] }))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoadingMore(false))
+  }
 
   if (error) {
     return (
@@ -58,15 +80,19 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
     )
   }
 
-  if (!txns) return <SkeletonTable rows={4} />
+  if (!page) return <SkeletonTable rows={4} />
+
+  const txns = page.results
 
   if (txns.length === 0) {
     return <EmptyState icon={<IconClipboardEmpty />} title={t('reports_seller_empty_title')} />
   }
 
-  const totalSales = txns.reduce((sum, t) => sum + t.check_amount, 0)
-  const totalEarned = txns.reduce((sum, t) => sum + t.cashback_earned, 0)
-  const totalSpent = txns.reduce((sum, t) => sum + t.cashback_spent, 0)
+  // Totals come from the server and cover the seller's full history, not
+  // just the transactions currently loaded on the page below.
+  const totalSales = page.totals.check_amount
+  const totalEarned = page.totals.cashback_earned
+  const totalSpent = page.totals.cashback_spent
 
   return (
     <div>
@@ -110,6 +136,18 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
           </tbody>
         </table>
       </div>
+
+      {txns.length < page.count && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={loadMore}
+          disabled={loadingMore}
+          style={{ marginTop: '0.75rem' }}
+        >
+          {loadingMore ? t('reports_loading_more') : t('reports_load_more')}
+        </button>
+      )}
 
       <div className="chart-card" style={{ marginTop: '1.25rem', marginBottom: 0 }}>
         <h3 style={{ marginBottom: '1rem' }}>{t('reports_overall_stats_heading')}</h3>

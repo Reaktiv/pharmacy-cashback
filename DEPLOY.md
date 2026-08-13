@@ -1,9 +1,9 @@
 # Production deployment
 
 Target: a single Ubuntu VPS (e.g. Contabo Cloud VPS), Docker Compose,
-nginx terminating TLS in front of gunicorn+uvicorn (Django) and the built
-React admin panel. Telegram requires a real HTTPS domain for webhooks — a
-bare IP will not work.
+nginx terminating TLS in front of uvicorn (Django) and the built React
+admin panel. Telegram requires a real HTTPS domain for webhooks — a bare
+IP will not work.
 
 ## 0. Prerequisites
 
@@ -106,7 +106,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 This builds and starts everything: Postgres, Redis, `web` (runs migrations
-+ collectstatic automatically on start, then gunicorn), `worker`, `beat`,
++ collectstatic automatically on start, then uvicorn), `worker`, `beat`,
 `frontend-build` (builds the React app once into a shared volume), `nginx`
 (currently on the bootstrap HTTP-only config), and `certbot` (idle renew
 loop — nothing to renew yet).

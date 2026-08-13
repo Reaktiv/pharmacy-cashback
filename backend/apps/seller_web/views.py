@@ -9,6 +9,7 @@ from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.models import UserProfile
+from apps.accounts.ratelimit import RateLimitExceededError
 from apps.customers.models import PendingCashback
 from apps.ledger.models import Transaction
 from apps.ledger.services import (
@@ -115,7 +116,12 @@ def earn(request):
     if isinstance(result, Transaction):
         messages.success(
             request,
-            t(language, "earn_success_earned", earned=result.cashback_earned, balance=get_balance(result.customer)),
+            t(
+                language,
+                "earn_success_earned",
+                earned=result.cashback_earned,
+                balance=get_balance(result.customer),
+            ),
         )
     elif isinstance(result, PendingCashback):
         messages.success(request, t(language, "earn_success_pending", amount=result.amount))
@@ -153,6 +159,7 @@ def redeem(request):
         MaxCheckAmountExceededError,
         DailyTransactionLimitExceededError,
         DailyRedemptionLimitExceededError,
+        RateLimitExceededError,
     ) as exc:
         messages.error(request, str(exc))
         return redirect("seller_web:register")

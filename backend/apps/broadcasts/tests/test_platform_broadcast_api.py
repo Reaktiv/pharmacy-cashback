@@ -119,6 +119,29 @@ def test_non_superadmin_cannot_read_platform_broadcast_media_file(
 
 
 @pytest.mark.django_db
+def test_platform_broadcast_media_file_action_hands_off_to_nginx(api_client_for, make_user):
+    superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
+    client = api_client_for(superadmin)
+    upload = client.post(
+        "/api/platform-broadcast-media/",
+        {"file": SimpleUploadedFile("clip.png", b"x" * 10, content_type="image/png")},
+        format="multipart",
+    )
+    media_id = upload.data["id"]
+
+    from apps.broadcasts.models import PlatformBroadcastMedia
+
+    media = PlatformBroadcastMedia.objects.get(pk=media_id)
+
+    response = client.get(f"/api/platform-broadcast-media/{media_id}/file/")
+
+    assert response.status_code == 200
+    assert response["X-Accel-Redirect"] == f"/internal-media/{media.file.name}"
+    assert response.content == b""
+    assert 'filename="clip.png"' in response["Content-Disposition"]
+
+
+@pytest.mark.django_db
 def test_superadmin_can_create_a_draft_platform_broadcast(api_client_for, make_user):
     superadmin = make_user(role=UserProfile.Role.SUPERADMIN)
     client = api_client_for(superadmin)
