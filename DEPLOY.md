@@ -55,6 +55,15 @@ cd pharmacy-cashback
 
 ## 3. Create `.env`
 
+`localhost` in `ALLOWED_HOSTS` below is required, not optional: the `web`
+container's own healthcheck (`docker-compose.prod.yml`) calls
+`http://localhost:8000/healthz/` from inside the container itself, and
+Django's ALLOWED_HOSTS check rejects that Host header with a 400 if only
+the real domain is listed — which Docker then reports as "unhealthy" even
+though the app is actually fine. Port 8000 is never published outside the
+Docker network (only nginx's 80/443 are), so this doesn't widen what's
+reachable from the internet.
+
 ```bash
 nano .env
 ```
@@ -63,7 +72,7 @@ nano .env
 DJANGO_SETTINGS_MODULE=config.settings
 SECRET_KEY=            # python3 -c "import secrets; print(secrets.token_urlsafe(50))"
 DEBUG=False
-ALLOWED_HOSTS=your-domain.com
+ALLOWED_HOSTS=your-domain.com,localhost
 CSRF_TRUSTED_ORIGINS=https://your-domain.com
 
 FERNET_KEY=            # python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
