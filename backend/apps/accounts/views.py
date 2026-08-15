@@ -1,17 +1,26 @@
 from django.contrib.auth.views import LoginView, LogoutView
+from rest_framework.exceptions import AuthenticationFailed, Throttled
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.accounts.ratelimit import RateLimitExceededError, check_rate_limit, client_identity
+from apps.accounts.ratelimit import (
+    RateLimitExceededError,
+    check_rate_limit,
+    client_identity,
+    peek_rate_limit,
+    record_failed_attempt,
+)
 from apps.accounts.serializers import TenantAwareTokenObtainPairSerializer
 from apps.seller_web.i18n import LANGUAGES, get_language, strings_for
 from apps.tenants.models import GlobalSettings
 
 SELLER_LOGIN_ATTEMPT_LIMIT = 5
 SELLER_LOGIN_ATTEMPT_WINDOW_SECONDS = 300
+
+ADMIN_LOGIN_ATTEMPT_LIMIT = 5
+ADMIN_LOGIN_ATTEMPT_WINDOW_SECONDS = 60
 
 
 class SellerLoginView(LoginView):
@@ -59,27 +68,34 @@ class SellerLogoutView(LogoutView):
     next_page = "accounts:login"
 
 
-class LoginRateThrottle(AnonRateThrottle):
-    """5 attempts per 5 minutes per client — matches the window used by the
-    custom limiter on the two plain-Django login/redeem views (see
-    apps.accounts.ratelimit). DRF's "N/period" rate strings only support
-    whole s/m/h/d windows, so num_requests/duration are set directly here
-    instead."""
-
-    scope = "login"
-
-    def __init__(self):
-        self.num_requests = 5
-        self.duration = 300
-        # allow_request() only checks this for `is None` (meaning "no
-        # throttling") — it never re-parses the string once num_requests/
-        # duration are already set above, so this is just documentation.
-        self.rate = f"{self.num_requests}/{self.duration}s"
-
-
 class TenantAwareTokenObtainPairView(TokenObtainPairView):
     serializer_class = TenantAwareTokenObtainPairSerializer  # type: ignore[assignment]
-    throttle_classes = [LoginRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        # DRF's AnonRateThrottle (the old approach here) counts every
+        # request, right or wrong password — an admin logging in correctly
+        # several times in a row (multiple tabs/devices) got locked out for
+        # minutes despite never once getting it wrong. Same peek/record
+        # pattern as SellerLoginView above and the OTP-redeem flow
+        # (apps.ledger.services) instead: only a *wrong* password counts.
+        attempt_key = f"admin_login_attempts:{client_identity(request)}"
+        try:
+            peek_rate_limit(key=attempt_key, limit=ADMIN_LOGIN_ATTEMPT_LIMIT)
+        except RateLimitExceededError as exc:
+            # peek_rate_limit raises a plain-Django exception (see
+            # SellerLoginView's own try/except above) — DRF only
+            # auto-converts its own exception types into a response, so
+            # this must become a Throttled (429) explicitly or it
+            # surfaces as an unhandled 500.
+            raise Throttled(detail=str(exc)) from exc
+
+        try:
+            return super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            record_failed_attempt(
+                key=attempt_key, window_seconds=ADMIN_LOGIN_ATTEMPT_WINDOW_SECONDS
+            )
+            raise
 
 
 class MeView(APIView):
