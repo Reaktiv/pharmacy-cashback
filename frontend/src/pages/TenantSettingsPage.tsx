@@ -5,6 +5,8 @@ import { useAuth } from '../auth/AuthContext'
 import type { Branch, Tenant } from '../api/types'
 import type { LayoutOutletContext } from '../components/Layout'
 import { useLanguage } from '../lib/i18n'
+import PageHeader from '../components/PageHeader'
+import SettingsGroup, { SettingsGroupBody } from '../components/SettingsGroup'
 import {
   IconAlertCircle,
   IconCheckCircle,
@@ -249,6 +251,204 @@ function RateForm({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant) =>
   )
 }
 
+/** CLAUDE.md §2/§5/§8 tenant-level knobs a tenant_admin is allowed to set
+ * (bounded elsewhere by the global cap / superadmin-only fields already
+ * enforced server-side in TenantSerializer.validate): the minimum check
+ * total to redeem, how long unspent points last, and the default daily
+ * per-seller transaction cap (a Seller.daily_txn_limit, when set, still
+ * overrides this per seller — see SellersList's DailyLimitEditor). */
+function RedemptionLimitsForm({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant) => void }) {
+  const { t } = useLanguage()
+  const [minRedeemAmount, setMinRedeemAmount] = useState(tenant.min_redeem_amount)
+  const [pointsExpiryDays, setPointsExpiryDays] = useState(
+    tenant.points_expiry_days === null ? '' : String(tenant.points_expiry_days),
+  )
+  const [defaultDailyTxnLimit, setDefaultDailyTxnLimit] = useState(
+    tenant.default_daily_txn_limit === null ? '' : String(tenant.default_daily_txn_limit),
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  useAutoDismiss(saved, () => setSaved(false))
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    setSaved(false)
+    setSubmitting(true)
+    try {
+      const updated = await apiFetch<Tenant>(`/api/tenants/${tenant.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          min_redeem_amount: minRedeemAmount,
+          points_expiry_days: pointsExpiryDays.trim() === '' ? null : Number(pointsExpiryDays),
+          default_daily_txn_limit: defaultDailyTxnLimit.trim() === '' ? null : Number(defaultDailyTxnLimit),
+        }),
+      })
+      onSaved(updated)
+      setSaved(true)
+    } catch (err) {
+      setError(
+        extractDetailError(err) ??
+          (err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_limits_save_error')),
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {error && (
+        <div className="error-banner">
+          <IconAlertCircle />
+          <span>{error}</span>
+        </div>
+      )}
+      {saved && (
+        <div className="toast">
+          <IconCheckCircle />
+          {t('tenant_detail_saved_toast')}
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor="min-redeem-amount">{t('field_min_redeem_amount')}</label>
+        <input
+          id="min-redeem-amount"
+          type="number"
+          step="0.01"
+          min="0"
+          value={minRedeemAmount}
+          onChange={(e) => setMinRedeemAmount(e.target.value)}
+          required
+        />
+        <p className="hint">{t('field_min_redeem_amount_hint')}</p>
+      </div>
+      <div className="field">
+        <label htmlFor="points-expiry-days">{t('field_points_expiry_days')}</label>
+        <input
+          id="points-expiry-days"
+          type="number"
+          min={0}
+          step={1}
+          value={pointsExpiryDays}
+          onChange={(e) => setPointsExpiryDays(e.target.value)}
+          placeholder={t('field_points_expiry_days')}
+        />
+        <p className="hint">{t('field_points_expiry_days_hint')}</p>
+      </div>
+      <div className="field">
+        <label htmlFor="default-daily-txn-limit">{t('field_default_daily_txn_limit')}</label>
+        <input
+          id="default-daily-txn-limit"
+          type="number"
+          min={0}
+          step={1}
+          value={defaultDailyTxnLimit}
+          onChange={(e) => setDefaultDailyTxnLimit(e.target.value)}
+          placeholder={t('unlimited')}
+        />
+        <p className="hint">{t('field_default_daily_txn_limit_hint')}</p>
+      </div>
+      <button type="submit" disabled={submitting}>
+        {submitting ? t('saving') : t('save')}
+      </button>
+    </form>
+  )
+}
+
+/** Bot-only feature (apps/tenants/models.py Tenant.receipt_tin/
+ * receipt_branch): a customer photographs their fiscal receipt's QR code
+ * and the bot credits cashback automatically after verifying the receipt's
+ * STIR matches this tenant's own — set here — and matches no other
+ * business's. receipt_branch is which of this tenant's branches those
+ * bot-sourced transactions get attributed to. Leaving the STIR empty turns
+ * the bot feature off. */
+function ReceiptCashbackForm({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant) => void }) {
+  const { t } = useLanguage()
+  const [branches, setBranches] = useState<Branch[] | null>(null)
+  const [receiptTin, setReceiptTin] = useState(tenant.receipt_tin)
+  const [receiptBranch, setReceiptBranch] = useState(
+    tenant.receipt_branch === null ? '' : String(tenant.receipt_branch),
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  useAutoDismiss(saved, () => setSaved(false))
+
+  useEffect(() => {
+    apiFetch<Branch[] | { results: Branch[] }>('/api/branches/').then((data) => setBranches(asArray(data)))
+  }, [])
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    setSaved(false)
+    setSubmitting(true)
+    try {
+      const updated = await apiFetch<Tenant>(`/api/tenants/${tenant.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          receipt_tin: receiptTin.trim(),
+          receipt_branch: receiptBranch.trim() === '' ? null : Number(receiptBranch),
+        }),
+      })
+      onSaved(updated)
+      setSaved(true)
+    } catch (err) {
+      setError(
+        extractDetailError(err) ??
+          (err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_receipt_save_error')),
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {error && (
+        <div className="error-banner">
+          <IconAlertCircle />
+          <span>{error}</span>
+        </div>
+      )}
+      {saved && (
+        <div className="toast">
+          <IconCheckCircle />
+          {t('tenant_detail_saved_toast')}
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor="receipt-tin">{t('field_receipt_tin')}</label>
+        <input
+          id="receipt-tin"
+          value={receiptTin}
+          onChange={(e) => setReceiptTin(e.target.value)}
+          placeholder="123456789"
+          maxLength={9}
+        />
+        <p className="hint">{t('field_receipt_tin_hint')}</p>
+      </div>
+      <div className="field">
+        <label htmlFor="receipt-branch">{t('field_receipt_branch')}</label>
+        <select id="receipt-branch" value={receiptBranch} onChange={(e) => setReceiptBranch(e.target.value)}>
+          <option value="">{t('field_branch_select_placeholder')}</option>
+          {(branches ?? []).map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        <p className="hint">{t('field_receipt_branch_hint')}</p>
+      </div>
+      <button type="submit" disabled={submitting}>
+        {submitting ? t('saving') : t('save')}
+      </button>
+    </form>
+  )
+}
+
 /** Just the "create a branch" form — the branch list itself now lives on
  * the Dorixona overview page (TenantAdminPage). */
 function AddBranchForm({ onCreated }: { onCreated: () => void }) {
@@ -435,48 +635,60 @@ export default function TenantSettingsPage() {
 
   return (
     <div>
-      <span className="eyebrow">{t('eyebrow_tenant')}</span>
-      <h2 style={{ marginBottom: '1.5rem' }}>{t('nav_tenant_settings')}</h2>
+      <PageHeader eyebrow={t('eyebrow_tenant')} title={t('nav_tenant_settings')} />
 
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_identity_card_heading')}</h3>
-        </div>
-        <PharmacyIdentitySection tenant={tenant} onSaved={setTenant} />
-      </div>
+      <SettingsGroup
+        title={t('tenant_admin_identity_card_heading')}
+        description={t('settings_group_identity_description')}
+      >
+        <SettingsGroupBody>
+          <PharmacyIdentitySection tenant={tenant} onSaved={setTenant} />
+        </SettingsGroupBody>
+      </SettingsGroup>
 
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_rate_card_heading')}</h3>
-        </div>
-        <RateForm tenant={tenant} onSaved={setTenant} />
-      </div>
+      <SettingsGroup
+        title={t('tenant_admin_limits_card_heading')}
+        description={t('settings_group_cashback_description')}
+      >
+        <SettingsGroupBody>
+          <h3 style={{ fontSize: '0.85rem', marginBottom: '0.9rem' }}>{t('tenant_admin_rate_card_heading')}</h3>
+          <RateForm tenant={tenant} onSaved={setTenant} />
+        </SettingsGroupBody>
+        <SettingsGroupBody>
+          <RedemptionLimitsForm tenant={tenant} onSaved={setTenant} />
+        </SettingsGroupBody>
+      </SettingsGroup>
 
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_quota_card_heading')}</h3>
-        </div>
-        <p style={{ marginTop: 0, marginBottom: 0 }}>
-          {t('tenant_detail_quota_usage', {
-            used: tenant.broadcasts_sent_this_month,
-            quota: tenant.broadcast_quota === null ? '∞' : tenant.broadcast_quota,
-          })}
-        </p>
-      </div>
+      <SettingsGroup title={t('tenant_admin_receipt_card_heading')}>
+        <SettingsGroupBody>
+          <ReceiptCashbackForm tenant={tenant} onSaved={setTenant} />
+        </SettingsGroupBody>
+      </SettingsGroup>
 
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_add_branch_card_heading')}</h3>
-        </div>
-        <AddBranchForm onCreated={load} />
-      </div>
+      <SettingsGroup title={t('tenant_admin_quota_card_heading')}>
+        <SettingsGroupBody>
+          <p style={{ margin: 0 }}>
+            {t('tenant_detail_quota_usage', {
+              used: tenant.broadcasts_sent_this_month,
+              quota: tenant.broadcast_quota === null ? '∞' : tenant.broadcast_quota,
+            })}
+          </p>
+        </SettingsGroupBody>
+      </SettingsGroup>
 
-      <div className="card">
-        <div className="card-title-row">
-          <h3>{t('tenant_admin_assign_manager_card_heading')}</h3>
-        </div>
-        <AddBranchManagerForm />
-      </div>
+      <SettingsGroup
+        title={t('label_branches')}
+        description={t('settings_group_branches_description')}
+      >
+        <SettingsGroupBody>
+          <h3 style={{ fontSize: '0.85rem', marginBottom: '0.9rem' }}>{t('tenant_admin_add_branch_card_heading')}</h3>
+          <AddBranchForm onCreated={load} />
+        </SettingsGroupBody>
+        <SettingsGroupBody>
+          <h3 style={{ fontSize: '0.85rem', marginBottom: '0.9rem' }}>{t('tenant_admin_assign_manager_card_heading')}</h3>
+          <AddBranchManagerForm />
+        </SettingsGroupBody>
+      </SettingsGroup>
     </div>
   )
 }

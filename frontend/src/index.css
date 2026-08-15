@@ -1,94 +1,98 @@
 /* ==========================================================================
    Pharmacy Cashback — Admin Dashboard design system
-   Light-only, healthcare-inspired SaaS visual language.
+   "Blister strip" pharmacy visual language (see CLAUDE.md) — deep green +
+   warm-white, mint/amber/terracotta used sparingly. Same custom-property
+   names as the old indigo/teal system so every component below just picks
+   up the new values.
    ========================================================================== */
 
 :root {
-  /* Neutral scale (cool slate) */
-  --gray-25: #fbfbfd;
-  --gray-50: #f6f7fb;
-  --gray-100: #eef0f6;
-  --gray-200: #e2e5ee;
-  --gray-300: #ccd1e0;
-  --gray-400: #9aa1b9;
-  --gray-500: #6b7290;
-  --gray-600: #4e5470;
-  --gray-700: #383d54;
-  --gray-800: #24273a;
-  --gray-900: #14152080;
-  --gray-900-solid: #14151f;
+  /* Neutral scale (green-tinted, was cool slate) */
+  --gray-25: #fafbfa;
+  --gray-50: #f6f8f5;
+  --gray-100: #eef3ee;
+  --gray-200: #dde5de;
+  --gray-300: #c7d2c9;
+  --gray-400: #93a397;
+  --gray-500: #5b6b62;
+  --gray-600: #3f4d45;
+  --gray-700: #2a352e;
+  --gray-800: #1c2621;
+  --gray-900: #14231c80;
+  --gray-900-solid: #14231c;
 
-  /* Primary — clinical indigo/violet */
-  --primary-50: #f1f0ff;
-  --primary-100: #e3e1fe;
-  --primary-200: #c9c5fd;
-  --primary-300: #a7a0fb;
-  --primary-400: #8a7ff8;
-  --primary-500: #6c5cf2;
-  --primary-600: #5540e6;
-  --primary-700: #4530c4;
-  --primary-800: #38279c;
-  --primary-900: #2c2078;
+  /* Primary — deep pharmacy green (was indigo/violet) */
+  --primary-50: #eafaf4;
+  --primary-100: #d3f3e6;
+  --primary-200: #a9e6cd;
+  --primary-300: #7ed6b0;
+  --primary-400: #4bc499;
+  --primary-500: #2fbf8f;
+  --primary-600: #1b5e44;
+  --primary-700: #0f3d2e;
+  --primary-800: #0c3226;
+  --primary-900: #081f18;
 
-  /* Pharmacy accent — soft clinical teal, used for the brand mark & highlights */
-  --teal-50: #eefcfa;
-  --teal-100: #d3f7f0;
-  --teal-500: #17b3a3;
-  --teal-600: #109485;
-  --teal-700: #0c766b;
+  /* Pharmacy accent — mint, used for the brand mark & highlights */
+  --teal-50: #eafaf4;
+  --teal-100: #d3f3e6;
+  --teal-500: #22a686;
+  --teal-600: #1b8a70;
+  --teal-700: #15805d;
 
   /* Semantic */
-  --success-50: #ecfdf5;
-  --success-500: #10b981;
-  --success-600: #059669;
-  --success-700: #047857;
+  --success-50: #eafaf4;
+  --success-500: #2fbf8f;
+  --success-600: #1fa377;
+  --success-700: #15805d;
 
-  --warning-50: #fffbeb;
-  --warning-500: #f59e0b;
-  --warning-600: #d97706;
-  --warning-700: #b45309;
+  --warning-50: #fdf6e8;
+  --warning-500: #e3a73b;
+  --warning-600: #c88f28;
+  --warning-700: #a8781f;
 
-  --danger-50: #fef2f4;
-  --danger-500: #f43f5e;
-  --danger-600: #e11d48;
-  --danger-700: #be123c;
+  --danger-50: #fbeeec;
+  --danger-500: #c24a3d;
+  --danger-600: #a83c30;
+  --danger-700: #8a3026;
 
   --info-50: #eff8ff;
   --info-500: #38a3f5;
   --info-600: #0d8de0;
 
-  /* Chart series (validated: ΔE 34–40 across CVD modes) */
-  --chart-earn: #5540e6;
-  --chart-spend: #d97706;
-  --chart-sales: #109485;
+  /* Chart series */
+  --chart-earn: #2fbf8f;
+  --chart-spend: #e3a73b;
+  --chart-sales: #0f3d2e;
 
   /* Surfaces */
-  --bg: #fbfbfe;
+  --bg: #f6f8f5;
   --surface: #ffffff;
-  --surface-sunken: #f6f7fb;
+  --surface-sunken: #eef3ee;
   --border: var(--gray-200);
-  --border-soft: #eceffa;
+  --border-soft: #e6ede6;
 
   --text: var(--gray-900-solid);
   --text-muted: var(--gray-500);
   --text-faint: var(--gray-400);
 
-  --accent: var(--primary-600);
-  --accent-hover: var(--primary-700);
+  --accent: #2fbf8f;
+  --accent-warm: #e3a73b;
+  --accent-hover: var(--primary-600);
 
   /* Radii */
   --r-xs: 8px;
   --r-sm: 10px;
-  --r-md: 14px;
-  --r-lg: 18px;
+  --r-md: 12px;
+  --r-lg: 20px;
   --r-xl: 24px;
   --r-full: 999px;
 
-  /* Shadows — tinted cool, never pure black */
-  --shadow-xs: 0 1px 2px rgba(20, 21, 40, 0.05);
-  --shadow-sm: 0 2px 6px -2px rgba(20, 21, 40, 0.08), 0 1px 2px rgba(20, 21, 40, 0.04);
-  --shadow-md: 0 12px 28px -10px rgba(35, 30, 90, 0.18), 0 4px 10px -4px rgba(35, 30, 90, 0.08);
-  --shadow-lg: 0 24px 56px -16px rgba(35, 30, 90, 0.24), 0 8px 20px -8px rgba(35, 30, 90, 0.1);
+  /* Shadows — tinted green, always very soft */
+  --shadow-xs: 0 1px 2px rgba(15, 61, 46, 0.06);
+  --shadow-sm: 0 2px 6px -2px rgba(15, 61, 46, 0.1), 0 1px 2px rgba(15, 61, 46, 0.05);
+  --shadow-md: 0 12px 28px -10px rgba(15, 61, 46, 0.16), 0 4px 10px -4px rgba(15, 61, 46, 0.08);
+  --shadow-lg: 0 24px 56px -16px rgba(15, 61, 46, 0.2), 0 8px 20px -8px rgba(15, 61, 46, 0.1);
   --shadow-focus: 0 0 0 4px var(--primary-100);
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -111,10 +115,10 @@ html {
 body {
   margin: 0;
   font-family:
+    'Public Sans',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
-    Inter,
     Roboto,
     'Helvetica Neue',
     Arial,
@@ -139,8 +143,14 @@ h3 {
   color: var(--text);
 }
 
+/* Display serif — reserved for the brand name and page headings only
+   (CLAUDE.md's "kam ishlatiladi" rule), so it's h1 alone, not h2/h3. */
 h1 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
+  font-weight: 600;
   font-size: 1.6rem;
+  letter-spacing: -0.01em;
 }
 
 h2 {
@@ -165,13 +175,13 @@ p {
 }
 
 a {
-  color: var(--primary-600);
+  color: var(--primary-700);
   font-weight: 600;
   text-decoration: none;
 }
 
 a:hover {
-  color: var(--primary-700);
+  color: var(--primary-600);
   text-decoration: underline;
 }
 
@@ -187,7 +197,14 @@ a:hover {
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
-  margin: 2.25rem 0 1rem;
+  margin: 2.25rem 0 1.25rem;
+  padding-bottom: 1.1rem;
+  /* The "blister strip" perforation motif (CLAUDE.md) — reserved for
+     section dividers, so it lives here rather than on individual cards. */
+  background-image: radial-gradient(circle, var(--border) 1.4px, transparent 1.5px);
+  background-size: 8px 6px;
+  background-repeat: repeat-x;
+  background-position: left bottom;
 }
 
 .section-head:first-child {
@@ -212,8 +229,49 @@ a:hover {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--primary-600);
+  color: var(--accent-warm);
   margin: 0 0 0.35rem;
+}
+
+/* ---------- Page header ---------- */
+/* One per page — the single hero heading (eyebrow + h1 in Fraunces +
+   description + actions). Replaces the old scattered eyebrow/h2 pairs
+   that used to open every page. */
+
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  background-image: radial-gradient(circle, var(--border) 1.4px, transparent 1.5px);
+  background-size: 8px 6px;
+  background-repeat: repeat-x;
+  background-position: left bottom;
+}
+
+.page-header-text {
+  min-width: 0;
+}
+
+.page-header h1 {
+  margin: 0;
+}
+
+.page-header-description {
+  margin: 0.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  max-width: 58ch;
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
 }
 
 /* ---------- Cards & panels ---------- */
@@ -247,6 +305,45 @@ a:hover {
   margin-bottom: 1rem;
 }
 
+/* ---------- Settings groups ---------- */
+/* One cohesive panel per settings group instead of a floating card per
+   field — internal sections are divided by a hairline, not re-boxed. */
+
+.settings-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  margin-bottom: 1.1rem;
+  overflow: hidden;
+}
+
+.settings-group-head {
+  padding: 1.1rem 1.4rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.settings-group-head h3 {
+  margin: 0 0 0.2rem;
+}
+
+.settings-group-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.settings-group-body {
+  padding: 1.25rem 1.4rem;
+}
+
+.settings-group-body + .settings-group-body {
+  border-top: 1px solid var(--border-soft);
+}
+
+.settings-group-body form {
+  margin: 0;
+}
+
 /* ---------- App shell ---------- */
 
 .app-shell {
@@ -261,8 +358,8 @@ a:hover {
 .sidebar {
   width: 264px;
   flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background: var(--primary-700);
+  border-right: none;
   display: flex;
   flex-direction: column;
   padding: 1.3rem 1rem;
@@ -286,63 +383,6 @@ a:hover {
 .sidebar.closed > * {
   opacity: 0;
   pointer-events: none;
-}
-
-.sidebar-brand {
-  padding: 0.4rem 0.6rem 1.4rem;
-  min-width: 0;
-}
-
-.sidebar-profile-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.55rem;
-  width: 100%;
-  padding: 0.6rem 0.5rem 1.4rem;
-  margin-bottom: 0.6rem;
-  border-bottom: 1px solid var(--border-soft);
-  text-align: center;
-}
-
-.sidebar-profile-avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: var(--r-full);
-  flex-shrink: 0;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--primary-500), var(--teal-500));
-  color: #fff;
-  font-weight: 800;
-  font-size: 1.3rem;
-}
-
-.sidebar-profile-avatar.has-image {
-  background: #fff;
-}
-
-.sidebar-profile-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.sidebar-profile-name {
-  font-weight: 750;
-  font-size: 0.95rem;
-  color: var(--text);
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-profile-role {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  font-weight: 600;
 }
 
 .hamburger-btn {
@@ -392,7 +432,7 @@ a:hover {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-faint);
+  color: rgba(255, 255, 255, 0.4);
   padding: 1rem 0.75rem 0.4rem;
 }
 
@@ -400,15 +440,17 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  padding: 0.62rem 0.75rem;
+  padding: 0.62rem 0.75rem 0.62rem 0.65rem;
   border-radius: var(--r-md);
-  color: var(--gray-600);
+  border-left: 3px solid transparent;
+  color: rgba(255, 255, 255, 0.72);
   font-weight: 650;
   font-size: 0.87rem;
   text-decoration: none;
   transition:
     background 0.15s var(--ease),
-    color 0.15s var(--ease);
+    color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
   position: relative;
 }
 
@@ -420,14 +462,16 @@ a:hover {
 }
 
 .nav-item:hover {
-  background: var(--gray-50);
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
   text-decoration: none;
 }
 
+/* Left accent bar, not a filled background — CLAUDE.md: "to'liq fon emas". */
 .nav-item.active {
-  background: linear-gradient(135deg, var(--primary-50), var(--teal-50));
-  color: var(--primary-700);
+  background: rgba(255, 255, 255, 0.05);
+  border-left-color: var(--accent);
+  color: #fff;
 }
 
 .nav-item.active svg {
@@ -463,16 +507,80 @@ a:hover {
   border-color: var(--primary-300);
 }
 
-.sidebar-profile-btn {
-  width: 100%;
-  justify-content: flex-start;
-  margin-top: 1rem;
+/* Footer block — pinned to the bottom by .sidebar-nav's flex:1 above it.
+   Profile sits directly above Logout, deliberately understated (a chip,
+   not a name badge) so it doesn't compete with navigation. */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.9rem;
+  margin-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.sidebar-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  text-align: left;
+  box-shadow: none;
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+
+.sidebar-profile-trigger:hover {
+  background: rgba(255, 255, 255, 0.09);
+  transform: none;
+  box-shadow: none;
+}
+
+.sidebar-profile-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-xs);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--accent-warm);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.66rem;
+}
+
+.sidebar-profile-avatar.has-image {
+  background: #fff;
+}
+
+.sidebar-profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sidebar-profile-trigger-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Solid white capsule — the one high-contrast action in the sidebar. */
 .sidebar-logout {
   width: 100%;
-  justify-content: flex-start;
-  margin-top: 0.3rem;
+  background: #fff;
+  color: var(--primary-700);
+}
+
+.sidebar-logout:hover {
+  background: rgba(255, 255, 255, 0.85);
 }
 
 .app-main {
@@ -491,13 +599,18 @@ a:hover {
   justify-content: space-between;
   gap: 1rem;
   padding: 1rem 2rem;
-  background: rgba(251, 251, 254, 0.85);
+  background: rgba(246, 248, 245, 0.85);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-soft);
 }
 
-.app-topbar h1 {
-  font-size: 1.2rem;
+/* A slim, secondary breadcrumb-like label — the real page heading now
+   lives in-content via PageHeader (h1, Fraunces). Keeping this here just
+   preserves scroll context under the sticky topbar. */
+.app-topbar-title {
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -520,16 +633,16 @@ button,
   font-size: 0.87rem;
   padding: 0.62rem 1.15rem;
   border: none;
-  border-radius: var(--r-sm);
-  background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+  border-radius: var(--r-full);
+  background: var(--primary-700);
   color: #fff;
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
   transition:
-    transform 0.12s var(--ease),
-    box-shadow 0.12s var(--ease),
-    opacity 0.12s var(--ease),
-    background 0.12s var(--ease);
+    transform 0.1s var(--ease),
+    box-shadow 0.1s var(--ease),
+    opacity 0.1s var(--ease),
+    background 0.15s var(--ease);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -538,19 +651,19 @@ button,
 }
 
 button:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  background: var(--primary-600);
 }
 
+/* Physical button-press feel (CLAUDE.md), not a hover lift. */
 button:active {
-  transform: translateY(0);
+  transform: translateY(2px);
 }
 
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 
 /* Plain buttons carry icons with no other sizing rule to fall back on —
@@ -578,7 +691,11 @@ button.secondary:hover {
 }
 
 button.danger {
-  background: linear-gradient(135deg, var(--danger-500), var(--danger-700));
+  background: var(--danger-500);
+}
+
+button.danger:hover {
+  background: var(--danger-600);
 }
 
 button.ghost {
@@ -690,7 +807,7 @@ textarea:disabled {
 
 select {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%236b7290' stroke-width='2'%3E%3Cpath d='M5 8l5 5 5-5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%235b6b62' stroke-width='2'%3E%3Cpath d='M5 8l5 5 5-5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.7rem center;
   background-size: 16px;
@@ -713,6 +830,78 @@ input[type='checkbox'] {
   color: var(--text);
   cursor: pointer;
   width: fit-content;
+}
+
+/* ---------- Entity lists ---------- */
+/* A lighter replacement for a plain 2-3 column table when the rows are
+   entities you'd click into (a branch, an admin login) rather than data
+   you'd scan/compare — icon, title, one line of meta, a status slot. */
+
+.entity-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  background: var(--surface);
+}
+
+.entity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 1.25rem;
+  cursor: pointer;
+  transition: background 0.12s var(--ease);
+}
+
+.entity-row + .entity-row {
+  border-top: 1px solid var(--border-soft);
+}
+
+.entity-row:hover {
+  background: var(--surface-sunken);
+}
+
+.entity-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  background: var(--surface-sunken);
+  color: var(--primary-700);
+}
+
+.entity-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.entity-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.entity-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.entity-sub {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-side {
+  flex-shrink: 0;
 }
 
 /* ---------- Tables ---------- */
@@ -786,8 +975,9 @@ tbody tr.clickable:hover td {
 }
 
 td.num {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  font-weight: 650;
+  font-weight: 500;
 }
 
 .row-chevron {
@@ -880,13 +1070,13 @@ tr.expanded-row:hover td {
 .error-banner {
   background: var(--danger-50);
   color: var(--danger-700);
-  border-color: #fbd2da;
+  border-color: #f0d2cd;
 }
 
 .success-banner {
   background: var(--success-50);
   color: var(--success-700);
-  border-color: #bdf0d8;
+  border-color: #b9ecdc;
 }
 
 .error-banner,
@@ -974,15 +1164,55 @@ tr.expanded-row:hover td {
   box-shadow: var(--shadow-md);
 }
 
+.stat-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
 .stat-card-icon {
   width: 42px;
   height: 42px;
   border-radius: var(--r-sm);
   display: grid;
   place-items: center;
-  margin-bottom: 0.9rem;
   background: var(--primary-50);
   color: var(--primary-600);
+  flex-shrink: 0;
+}
+
+.trend-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--r-full);
+  font-size: 0.7rem;
+  font-weight: 750;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+.trend-badge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.trend-badge.up {
+  background: var(--success-50);
+  color: var(--success-700);
+}
+
+.trend-badge.down {
+  background: var(--danger-50);
+  color: var(--danger-700);
+}
+
+.trend-badge.flat {
+  background: var(--gray-100);
+  color: var(--text-muted);
 }
 
 .stat-card-icon svg {
@@ -1015,9 +1245,10 @@ tr.expanded-row:hover td {
 }
 
 .stat-card-value {
-  font-size: 1.7rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 1.55rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.15;
 }
 
@@ -1026,6 +1257,197 @@ tr.expanded-row:hover td {
   font-size: 0.78rem;
   color: var(--text-faint);
   font-weight: 600;
+}
+
+/* ---------- Performance cards (sellers / branches) ---------- */
+/* Analytical replacements for the plain seller/branch tables — one row per
+   entity, a comparison bar instead of a bare number, expandable in place. */
+
+.perf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-bottom: 1.5rem;
+}
+
+.perf-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.perf-card-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+}
+
+.perf-card-row.static {
+  cursor: default;
+}
+
+.perf-rank {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-full);
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 600;
+  font-size: 0.8rem;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+
+.perf-rank.top {
+  background: var(--primary-50);
+  color: var(--primary-700);
+}
+
+.perf-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.perf-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.perf-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.9rem;
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.perf-meta strong {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.perf-bar-track {
+  margin-top: 0.6rem;
+  height: 5px;
+  border-radius: var(--r-full);
+  background: var(--surface-sunken);
+  overflow: hidden;
+  max-width: 320px;
+}
+
+.perf-bar-fill {
+  height: 100%;
+  border-radius: var(--r-full);
+  background: var(--accent);
+}
+
+.perf-bar-fill.warn {
+  background: var(--accent-warm);
+}
+
+.perf-side {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.perf-detail {
+  border-top: 1px solid var(--border-soft);
+  padding: 1.1rem 1.25rem 1.35rem;
+  background: var(--surface-sunken);
+}
+
+/* Branch ratio bar — earned/spent share of the branch's collected total,
+   with the outstanding remainder implicit as the uncolored tail. */
+.ratio-bar-track {
+  display: flex;
+  height: 8px;
+  border-radius: var(--r-full);
+  overflow: hidden;
+  background: var(--surface-sunken);
+  margin-top: 0.75rem;
+}
+
+.ratio-bar-earn {
+  background: var(--chart-earn);
+  height: 100%;
+}
+
+.ratio-bar-spend {
+  background: var(--chart-spend);
+  height: 100%;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.branch-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 1.1rem 1.25rem;
+}
+
+.branch-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.branch-card-name {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.branch-card-figures {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+}
+
+.branch-card-figure {
+  min-width: 0;
+}
+
+.branch-card-figure-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-bottom: 0.2rem;
+}
+
+.branch-card-figure-value {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.branch-card-figure-value.earn {
+  color: var(--success-700);
+}
+
+.branch-card-figure-value.spend {
+  color: var(--accent-warm);
 }
 
 /* ---------- Skeleton loading ---------- */
@@ -1425,113 +1847,284 @@ tr.expanded-row:hover td {
   font-size: 0.82rem;
 }
 
-/* ---------- Brand mark ---------- */
+/* ---------- Auth screens (pharmacy theme) ----------
+   Split-screen login: a dark-green brand panel on the left, a plain white
+   form panel on the right — no shadows anywhere, thin rectangular borders
+   instead. Scoped to .auth-shell only so the rest of the app keeps the
+   indigo/teal tokens it already uses. */
 
-.brand {
+.auth-shell {
+  --pharm-bg: #f6f8f5;
+  --pharm-surface: #ffffff;
+  --pharm-surface-2: #eef3ee;
+  --pharm-ink: #14231c;
+  --pharm-ink-muted: #5b6b62;
+  --pharm-primary: #0f3d2e;
+  --pharm-primary-2: #1b5e44;
+  --pharm-accent: #2fbf8f;
+  --pharm-danger: #c24a3d;
+  --pharm-line: #dde5de;
+
+  min-height: 100svh;
   display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  min-width: 0;
+  font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.brand-mark {
+.auth-left {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 3rem 2rem;
+  background: var(--pharm-primary);
+}
+
+.auth-left-mark {
+  width: 132px;
+  height: 132px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: var(--r-sm);
-  background: linear-gradient(135deg, var(--primary-500) 0%, var(--teal-500) 100%);
-  box-shadow: var(--shadow-sm);
 }
 
-/* Uploaded logos are often transparent-background PNGs — the gradient
-   fallback (for the default SVG mark) would otherwise show through. */
-.brand-mark.has-image {
-  background: #fff;
-}
-
-.brand-mark svg {
-  width: 62%;
-  height: 62%;
-}
-
-.brand-mark-img {
+.auth-left-mark img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  border-radius: inherit;
+  object-fit: contain;
 }
 
-.brand-name {
-  font-weight: 800;
-  font-size: 1.02rem;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  min-width: 0;
-  overflow-wrap: break-word;
+.auth-left-mark svg {
+  width: 100%;
+  height: 100%;
 }
 
-.brand-name small {
-  display: block;
+.auth-left-brand-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 320px;
+}
+
+.auth-left-name {
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
   font-weight: 600;
-  font-size: 0.68rem;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-top: 0.1rem;
+  font-size: 1.3rem;
+  line-height: 1.3;
+  color: #fff;
+  text-align: center;
 }
 
-/* ---------- Auth screens ---------- */
+.auth-left-subtitle {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  text-align: center;
+}
 
-.auth-shell {
-  min-height: 100svh;
+.auth-right {
+  flex: 1 1 50%;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-  background:
-    radial-gradient(900px 480px at 12% -10%, var(--primary-50) 0%, transparent 60%),
-    radial-gradient(700px 420px at 100% 110%, var(--teal-50) 0%, transparent 55%),
-    var(--bg);
+  padding: 3rem 2rem;
+  background: var(--pharm-surface);
 }
 
-.auth-card {
+.auth-form-wrap {
   width: 100%;
-  max-width: 380px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-xl);
-  box-shadow: var(--shadow-lg);
-  padding: 2.4rem 2.1rem;
+  max-width: 360px;
 }
 
-.auth-card .brand {
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
-  gap: 0.9rem;
-  margin-bottom: 1.7rem;
-}
-
-.auth-card .brand-mark {
-  width: 60px;
-  height: 60px;
-  border-radius: var(--r-md);
-}
-
-.auth-card h1 {
-  text-align: center;
-  font-size: 1.25rem;
+.auth-form-wrap h1 {
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: 1.75rem;
+  letter-spacing: -0.01em;
+  color: var(--pharm-ink);
   margin-bottom: 0.35rem;
 }
 
-.auth-card .auth-sub {
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-  margin: 0 0 1.6rem;
+.auth-form-wrap .auth-sub {
+  color: var(--pharm-ink-muted);
+  font-size: 0.875rem;
+  margin: 0 0 1.75rem;
+}
+
+.auth-form-wrap .field label {
+  font-family: 'Public Sans', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--pharm-ink-muted);
+}
+
+.auth-form-wrap input {
+  background: var(--pharm-surface);
+  border: 1.5px solid var(--pharm-line);
+  border-radius: 10px;
+  color: var(--pharm-ink);
+  padding: 0.7rem 0.9rem;
+  box-shadow: none;
+}
+
+.auth-form-wrap input:hover {
+  border-color: #c7d2c9;
+}
+
+.auth-form-wrap input:focus {
+  outline: none;
+  border-color: var(--pharm-primary);
+  box-shadow: none;
+}
+
+.auth-form-wrap button[type='submit'] {
+  width: 100%;
+  margin-top: 0.5rem;
+  background: var(--pharm-primary);
+  border-radius: 999px;
+  padding: 0.85rem 1.5rem;
+  font-family: 'Public Sans', sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  box-shadow: none;
+  transition:
+    transform 0.08s var(--ease),
+    background 0.15s var(--ease);
+}
+
+.auth-form-wrap button[type='submit']:hover {
+  background: var(--pharm-primary-2);
+  transform: none;
+  box-shadow: none;
+}
+
+.auth-form-wrap button[type='submit']:active {
+  transform: translateY(2px);
+}
+
+.auth-form-wrap .error-banner {
+  background: rgba(194, 74, 61, 0.08);
+  color: var(--pharm-danger);
+  border: 1px solid rgba(194, 74, 61, 0.22);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+/* Language dropdown — top-right corner of the form panel */
+
+.lang-dropdown {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+}
+
+.lang-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--pharm-surface);
+  color: var(--pharm-ink);
+  border: 1.5px solid var(--pharm-line);
+  border-radius: 10px;
+  padding: 0.5rem 0.85rem;
+  font-family: 'Public Sans', sans-serif;
+  font-weight: 700;
+  font-size: 0.78rem;
+  box-shadow: none;
+}
+
+.lang-dropdown-trigger:hover {
+  background: var(--pharm-surface-2);
+  transform: none;
+  box-shadow: none;
+}
+
+.lang-dropdown-chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.15s var(--ease);
+}
+
+.lang-dropdown-chevron.open {
+  transform: rotate(180deg);
+}
+
+.lang-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  min-width: 100%;
+  background: var(--pharm-surface);
+  border: 1.5px solid var(--pharm-line);
+  border-radius: 10px;
+  overflow: hidden;
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  z-index: 20;
+}
+
+.lang-dropdown-option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--pharm-ink-muted);
+  border: none;
+  border-radius: 7px;
+  padding: 0.45rem 0.6rem;
+  font-family: 'Public Sans', sans-serif;
+  font-weight: 600;
+  font-size: 0.78rem;
+  box-shadow: none;
+}
+
+.lang-dropdown-option:hover {
+  background: var(--pharm-surface-2);
+  transform: none;
+  box-shadow: none;
+}
+
+.lang-dropdown-option.active {
+  color: var(--pharm-primary);
+  background: var(--pharm-surface-2);
+}
+
+@media (max-width: 860px) {
+  .auth-shell {
+    flex-direction: column;
+  }
+
+  .auth-left {
+    flex: 0 0 auto;
+    padding: 2.25rem 1.5rem;
+    gap: 1rem;
+  }
+
+  .auth-left-mark {
+    width: 96px;
+    height: 96px;
+  }
+
+  .auth-left-name {
+    font-size: 1.05rem;
+  }
+
+  .auth-right {
+    padding: 2.5rem 1.5rem 3rem;
+  }
+
+  .lang-dropdown {
+    top: 1.25rem;
+    right: 1.25rem;
+  }
 }
 
 /* ---------- Modal / confirm dialog ---------- */
@@ -1759,6 +2352,32 @@ tr.expanded-row:hover td {
   margin-top: auto;
   padding-top: 1.25rem;
   border-top: 1px solid var(--border-soft);
+}
+
+/* Account identity header — the profile drawer's own hero, distinct from
+   DetailDrawer's generic title/subtitle (which the profile drawer doesn't
+   use — it renders this instead of an avatarLabel). */
+.account-identity {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.account-identity-name {
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.account-identity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.45rem;
 }
 
 @keyframes drawer-in {

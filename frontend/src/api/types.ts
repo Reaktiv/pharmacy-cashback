@@ -22,6 +22,8 @@ export interface Tenant {
   branch_limit: number | null
   branches_count: number
   has_logo: boolean
+  receipt_tin: string
+  receipt_branch: number | null
   created_at: string
 }
 
@@ -181,6 +183,7 @@ export interface MeProfile {
   branch_name: string | null
   full_name: string
   phone: string
+  language: 'uz' | 'en' | 'ru'
   has_avatar: boolean
   tenant_has_logo: boolean
   // Only meaningful (non-null) for role === 'superadmin' — the product-wide

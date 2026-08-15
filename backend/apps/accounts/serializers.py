@@ -306,6 +306,7 @@ class MeSerializer(serializers.ModelSerializer):
             "branch_name",
             "full_name",
             "phone",
+            "language",
             "has_avatar",
             "avatar",
             "remove_avatar",
@@ -372,7 +373,8 @@ class MeSerializer(serializers.ModelSerializer):
         remove_avatar = validated_data.get("remove_avatar", False)
         instance.full_name = validated_data.get("full_name", instance.full_name)
         instance.phone = validated_data.get("phone", instance.phone)
-        update_fields = ["full_name", "phone"]
+        instance.language = validated_data.get("language", instance.language)
+        update_fields = ["full_name", "phone", "language"]
         if remove_avatar and instance.avatar:
             instance.avatar.delete(save=False)
             instance.avatar = None

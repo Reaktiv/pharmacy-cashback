@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { apiFetch, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { useLanguage } from '../lib/i18n'
@@ -22,10 +23,12 @@ function AddSellerDrawer({
   onCreated: () => void
 }) {
   const { t } = useLanguage()
+  const queryClient = useQueryClient()
   const [phone, setPhone] = useState('')
   const [fullName, setFullName] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [dailyLimit, setDailyLimit] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -34,6 +37,7 @@ function AddSellerDrawer({
     setFullName('')
     setUsername('')
     setPassword('')
+    setDailyLimit('')
     setFormError(null)
   }
 
@@ -50,8 +54,10 @@ function AddSellerDrawer({
           full_name: fullName,
           username,
           password,
+          daily_txn_limit: dailyLimit.trim() === '' ? null : Number(dailyLimit),
         }),
       })
+      queryClient.invalidateQueries({ queryKey: ['sellers'] })
       reset()
       onCreated()
     } catch (err) {
@@ -105,6 +111,19 @@ function AddSellerDrawer({
             required
           />
         </div>
+        <div className="field">
+          <label htmlFor="seller-daily-limit">{t('th_daily_limit')}</label>
+          <input
+            id="seller-daily-limit"
+            type="number"
+            min={0}
+            step={1}
+            value={dailyLimit}
+            onChange={(e) => setDailyLimit(e.target.value)}
+            placeholder={t('unlimited')}
+          />
+          <p className="hint">{t('field_daily_limit_hint')}</p>
+        </div>
         <button type="submit" disabled={!branchId || submitting}>
           <IconPlus />
           {submitting ? t('saving') : t('sellers_add_heading')}
@@ -120,7 +139,6 @@ export default function SellersPage() {
   const isBranchManager = user?.role === 'branch_manager'
 
   const [addOpen, setAddOpen] = useState(false)
-  const [refreshToken, setRefreshToken] = useState(0)
 
   return (
     <div>
@@ -134,17 +152,14 @@ export default function SellersPage() {
         )}
       </div>
 
-      <SellersList canManage={isBranchManager} refreshToken={refreshToken} />
+      <SellersList canManage={isBranchManager} />
 
       {isBranchManager && (
         <AddSellerDrawer
           open={addOpen}
           branchId={user?.branchId ? String(user.branchId) : ''}
           onClose={() => setAddOpen(false)}
-          onCreated={() => {
-            setAddOpen(false)
-            setRefreshToken((x) => x + 1)
-          }}
+          onCreated={() => setAddOpen(false)}
         />
       )}
     </div>

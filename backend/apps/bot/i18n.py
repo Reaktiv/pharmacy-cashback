@@ -217,6 +217,61 @@ _STRINGS: dict[str, dict[Language, str]] = {
         "en": "Language changed.",
         "ru": "Язык изменён.",
     },
+    "receipt_button": {
+        "uz": "🧾 Chek yuborish",
+        "en": "🧾 Send receipt",
+        "ru": "🧾 Отправить чек",
+    },
+    "receipt_ask_photo": {
+        "uz": "Chekingizning QR kodi aniq ko'rinadigan suratini yuboring.",
+        "en": "Send a photo of your receipt with the QR code clearly visible.",
+        "ru": "Отправьте фото чека, на котором чётко виден QR-код.",
+    },
+    "receipt_processing": {
+        "uz": "⏳ Chek tekshirilmoqda...",
+        "en": "⏳ Checking your receipt...",
+        "ru": "⏳ Проверяем ваш чек...",
+    },
+    "receipt_qr_not_found": {
+        "uz": "Rasmda QR kod topilmadi. Chekning QR kodi aniq ko'rinadigan qilib qayta suratga oling.",
+        "en": "No QR code found in the photo. Retake it so the receipt's QR code is clearly visible.",
+        "ru": "На фото не найден QR-код. Переснимите так, чтобы QR-код чека был чётко виден.",
+    },
+    "receipt_untrusted_url": {
+        "uz": "Bu QR kod chek havolasi emas.",
+        "en": "This QR code isn't a receipt link.",
+        "ru": "Этот QR-код не является ссылкой на чек.",
+    },
+    "receipt_not_configured": {
+        "uz": "Kechirasiz, bu dorixonada QR-chek orqali cashback hali sozlanmagan.",
+        "en": "Sorry, QR-receipt cashback isn't set up for this pharmacy yet.",
+        "ru": "Извините, кешбэк по QR-чеку для этой аптеки пока не настроен.",
+    },
+    "receipt_wrong_tenant": {
+        "uz": "Bu chek ushbu dorixonaga tegishli emas.",
+        "en": "This receipt doesn't belong to this pharmacy.",
+        "ru": "Этот чек не относится к этой аптеке.",
+    },
+    "receipt_already_used": {
+        "uz": "Bu chek allaqachon ishlatilgan.",
+        "en": "This receipt has already been used.",
+        "ru": "Этот чек уже был использован.",
+    },
+    "receipt_fetch_failed": {
+        "uz": "Chekni tekshirib bo'lmadi. Birozdan keyin qayta urinib ko'ring.",
+        "en": "Couldn't verify the receipt. Please try again shortly.",
+        "ru": "Не удалось проверить чек. Попробуйте ещё раз позже.",
+    },
+    "cancel_button": {
+        "uz": "❌ Bekor qilish",
+        "en": "❌ Cancel",
+        "ru": "❌ Отмена",
+    },
+    "cancelled_message": {
+        "uz": "Bekor qilindi.",
+        "en": "Cancelled.",
+        "ru": "Отменено.",
+    },
 }
 
 

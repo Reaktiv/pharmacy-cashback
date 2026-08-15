@@ -1,3 +1,4 @@
+from django.core.cache import cache
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -19,6 +20,15 @@ from apps.ledger.services import post_reversal
 from apps.tenants.models import Tenant
 
 MAX_SELLER_TRANSACTIONS_LIMIT = 500
+
+CROSS_TENANT_DASHBOARD_CACHE_KEY = "ledger:cross_tenant_dashboard"
+CROSS_TENANT_DASHBOARD_CACHE_TTL = 60  # seconds; monitoring data, not a write-path check
+
+BRANCH_REPORT_CACHE_TTL = 60  # seconds; same reasoning as CROSS_TENANT_DASHBOARD_CACHE_TTL
+
+SELLER_REPORT_CACHE_TTL = 60  # seconds; same reasoning as CROSS_TENANT_DASHBOARD_CACHE_TTL
+
+DAILY_REPORT_CACHE_TTL = 60  # seconds; same reasoning as CROSS_TENANT_DASHBOARD_CACHE_TTL
 
 
 def _resolve_report_tenant(request):
@@ -81,6 +91,19 @@ class CrossTenantDashboardView(APIView):
     permission_classes = [IsSuperadmin]
 
     def get(self, request):
+        # No query params and superadmin-only means every caller gets the
+        # exact same rows, so a single global key is enough (same reasoning
+        # as GlobalSettings.load() in apps/tenants/models.py). The TTL alone
+        # is the invalidation strategy — tenant creation/status changes are
+        # rare, manual admin actions with no financial consequence to a
+        # cache lagging up to 60s, so there's no cache.delete() on write
+        # here unlike GlobalSettings (whose cached values feed the earn/
+        # redeem math directly).
+        rows = cache.get(CROSS_TENANT_DASHBOARD_CACHE_KEY)
+        if rows is None:
+            rows = get_cross_tenant_dashboard()
+            cache.set(CROSS_TENANT_DASHBOARD_CACHE_KEY, rows, CROSS_TENANT_DASHBOARD_CACHE_TTL)
+
         data = [
             {
                 "tenant_id": row["tenant"].id,
@@ -93,7 +116,7 @@ class CrossTenantDashboardView(APIView):
                 "total_liability": row["total_liability"],
                 "status": row["status"],
             }
-            for row in get_cross_tenant_dashboard()
+            for row in rows
         ]
         return Response(data)
 
@@ -103,6 +126,21 @@ class BranchReportView(APIView):
 
     def get(self, request):
         tenant = _resolve_report_tenant(request)
+
+        # Unlike CrossTenantDashboardView's single global key, this result
+        # is tenant-scoped (a superadmin can request any tenant via
+        # ?tenant_id=), so the cache key must include tenant.id — a shared
+        # key here would leak one tenant's branch figures into another
+        # tenant's response. Keyed by tenant, not by the requesting user:
+        # every caller allowed to see this tenant's report sees the same
+        # rows, so they should share one cache entry rather than each
+        # getting their own copy.
+        cache_key = f"ledger:branch_report:{tenant.id}"
+        rows = cache.get(cache_key)
+        if rows is None:
+            rows = get_branch_report(tenant=tenant)
+            cache.set(cache_key, rows, BRANCH_REPORT_CACHE_TTL)
+
         data = [
             {
                 "branch_id": row["branch"].id if row["branch"] else None,
@@ -111,7 +149,7 @@ class BranchReportView(APIView):
                 "total_spent": row["total_spent"],
                 "outstanding": row["outstanding"],
             }
-            for row in get_branch_report(tenant=tenant)
+            for row in rows
         ]
         return Response(data)
 
@@ -121,7 +159,22 @@ class SellerReportView(APIView):
 
     def get(self, request):
         profile = request.user.profile
-        rows = get_seller_report(tenant=_resolve_report_tenant(request))
+        tenant = _resolve_report_tenant(request)
+
+        # Cache holds only the tenant-wide raw report — the same rows a
+        # tenant_admin and every branch_manager in this tenant start from.
+        # The branch_manager filter below runs on every request, after the
+        # cache lookup, since it's a cheap in-memory list comprehension
+        # (not a DB query) and its result depends on which branch_manager
+        # is asking — caching post-filter would need a key per branch,
+        # fragmenting one tenant's report into N cache entries for no
+        # benefit (see BranchReportView's tenant-not-user reasoning above).
+        cache_key = f"ledger:seller_report:{tenant.id}"
+        rows = cache.get(cache_key)
+        if rows is None:
+            rows = get_seller_report(tenant=tenant)
+            cache.set(cache_key, rows, SELLER_REPORT_CACHE_TTL)
+
         if profile.role == UserProfile.Role.BRANCH_MANAGER:
             rows = [
                 row
@@ -220,5 +273,18 @@ class DailyEarnSpendReportView(APIView):
             days = int(request.query_params.get("days", 30))
         except ValueError:
             days = 30
-        rows = get_daily_earn_spend_report(tenant=tenant, days=days)
+
+        # Result depends on both tenant and days (ReportsPage.tsx uses 30,
+        # TenantDetailPage.tsx uses 14 — see CLAUDE.md discussion for this
+        # step), so both must be in the key or one page's request would
+        # serve another page's window under a different tenant/days
+        # combination. days isn't range-checked here (pre-existing, out of
+        # this cache's scope) — an unusual value just produces its own
+        # cache entry, no different from any other days value.
+        cache_key = f"ledger:daily_report:{tenant.id}:{days}"
+        rows = cache.get(cache_key)
+        if rows is None:
+            rows = get_daily_earn_spend_report(tenant=tenant, days=days)
+            cache.set(cache_key, rows, DAILY_REPORT_CACHE_TTL)
+
         return Response(rows)

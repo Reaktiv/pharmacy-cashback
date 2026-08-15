@@ -286,6 +286,42 @@ def test_redeem_flow_issues_an_otp(client, bot_row, mock_outbound_telegram, make
 
 
 @pytest.mark.django_db
+def test_cancel_button_clears_an_in_progress_redeem_flow(
+    client, bot_row, mock_outbound_telegram, make_customer
+):
+    tenant = bot_row["tenant"]
+    customer = make_customer(tenant, phone="+998900000010")
+    customer.telegram_id = 1010
+    customer.save(update_fields=["telegram_id"])
+
+    # tap "Redeem" — this sets RedeemStates.awaiting_amount
+    client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(1, chat_id=1010, user_id=1010, text="🎟 Ballarni ishlatish"),
+        content_type="application/json",
+    )
+    # tap "Cancel" instead of sending an amount
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(2, chat_id=1010, user_id=1010, text="❌ Bekor qilish"),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    texts = _sent_texts(mock_outbound_telegram)
+    assert texts[-1] == "Bekor qilindi."
+
+    # the cleared state must mean a plain number is no longer interpreted
+    # as a redeem amount — sending one now must not create an OTP.
+    response = client.post(
+        _webhook_url(bot_row["row"]),
+        data=_message_update(3, chat_id=1010, user_id=1010, text="20000"),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    assert not OTP.objects.all_tenants().filter(tenant=tenant, customer=customer).exists()
+
+
+@pytest.mark.django_db
 def test_report_button_flags_the_transaction(
     client, bot_row, mock_outbound_telegram, make_customer
 ):

@@ -92,6 +92,71 @@ def test_tenant_admin_cannot_change_slug_or_is_active(api_client_for, make_user,
 
 
 @pytest.mark.django_db
+def test_tenant_admin_can_set_receipt_tin(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("a")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"receipt_tin": "301422146"}, format="json"
+    )
+
+    assert response.status_code == 200
+    tenant.refresh_from_db()
+    assert tenant.receipt_tin == "301422146"
+
+
+@pytest.mark.django_db
+def test_receipt_tin_must_be_nine_digits(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("a")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.patch(f"/api/tenants/{tenant.id}/", {"receipt_tin": "12345"}, format="json")
+
+    assert response.status_code == 400
+    tenant.refresh_from_db()
+    assert tenant.receipt_tin == ""
+
+
+@pytest.mark.django_db
+def test_tenant_admin_can_set_receipt_branch_to_their_own_branch(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant = make_tenant("a")
+    branch = make_branch(tenant)
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+
+    response = client.patch(
+        f"/api/tenants/{tenant.id}/", {"receipt_branch": branch.id}, format="json"
+    )
+
+    assert response.status_code == 200
+    tenant.refresh_from_db()
+    assert tenant.receipt_branch_id == branch.id
+
+
+@pytest.mark.django_db
+def test_tenant_admin_cannot_set_receipt_branch_to_another_tenants_branch(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant_a = make_tenant("a")
+    tenant_b = make_tenant("b")
+    foreign_branch = make_branch(tenant_b)
+    admin_a = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant_a)
+    client = api_client_for(admin_a)
+
+    response = client.patch(
+        f"/api/tenants/{tenant_a.id}/", {"receipt_branch": foreign_branch.id}, format="json"
+    )
+
+    assert response.status_code == 400
+    tenant_a.refresh_from_db()
+    assert tenant_a.receipt_branch_id is None
+
+
+@pytest.mark.django_db
 def test_tenant_admin_cannot_create_tenants(api_client_for, make_user, make_tenant):
     tenant = make_tenant("a")
     admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)

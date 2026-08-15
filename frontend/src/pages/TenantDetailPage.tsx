@@ -1,15 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import type { BranchReportRow, DailyReportRow, Tenant, TenantAdmin, TenantBot } from '../api/types'
 import { activeStatusLabel } from '../lib/labels'
 import { useLanguage } from '../lib/i18n'
+import { weekOverWeekTrend } from '../lib/trend'
+import PageHeader from '../components/PageHeader'
 import StatCard from '../components/StatCard'
+import BranchPerformanceCard from '../components/BranchPerformanceCard'
 import EmptyState from '../components/EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
 import { DualBarChart } from '../components/Charts'
 import ConfirmDialog, { DoubleConfirmDialog } from '../components/ConfirmDialog'
 import DetailDrawer, { DrawerField } from '../components/DetailDrawer'
+import ActiveToggle from '../components/ActiveToggle'
 import {
   IconAlertCircle,
   IconCheckCircle,
@@ -47,6 +52,7 @@ function formatDay(day: string): string {
 
 function BotSection({ tenantId }: { tenantId: number }) {
   const { t, language } = useLanguage()
+  const queryClient = useQueryClient()
   // `undefined` = still loading, `null` = confirmed no bot for this tenant.
   const [bot, setBot] = useState<TenantBot | null | undefined>(undefined)
   const [username, setUsername] = useState('')
@@ -83,6 +89,11 @@ function BotSection({ tenantId }: { tenantId: number }) {
       setBot(created)
       setToken('')
       setSaved(true)
+      // The dashboard's cached ['cross-tenant-report'] shows bot_username
+      // per tenant — this tenant's row was showing "—" for it until now.
+      // Rotating an existing token (handleRotateToken below) doesn't touch
+      // the username, so it doesn't need this.
+      queryClient.invalidateQueries({ queryKey: ['cross-tenant-report'] })
     } catch (err) {
       setError(
         extractFieldError(err, 'token') ??
@@ -436,31 +447,28 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
 
   return (
     <div>
-      <div className="table-card">
+      <div>
         {admins.length === 0 ? (
-          <EmptyState icon={<IconUsers />} title={t('tenant_detail_admins_empty_title')} />
+          <div className="table-card">
+            <EmptyState icon={<IconUsers />} title={t('tenant_detail_admins_empty_title')} />
+          </div>
         ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('th_login')}</th>
-                  <th>{t('status_label')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {admins.map((a) => (
-                  <tr key={a.id} className="clickable" onClick={() => setSelected(a)}>
-                    <td>{a.username}</td>
-                    <td>
-                      <span className={`status-badge ${a.is_active ? 'active' : 'inactive'}`}>
-                        {activeStatusLabel(language, a.is_active ? 'active' : 'inactive')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="entity-list">
+            {admins.map((a) => (
+              <div key={a.id} className="entity-row" onClick={() => setSelected(a)}>
+                <span className="entity-icon">
+                  <IconUsers />
+                </span>
+                <div className="entity-main">
+                  <div className="entity-title">{a.username}</div>
+                </div>
+                <span className="entity-side">
+                  <span className={`status-badge ${a.is_active ? 'active' : 'inactive'}`}>
+                    {activeStatusLabel(language, a.is_active ? 'active' : 'inactive')}
+                  </span>
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -552,6 +560,7 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
 export default function TenantDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { t, language } = useLanguage()
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [branches, setBranches] = useState<BranchReportRow[] | null>(null)
@@ -567,6 +576,9 @@ export default function TenantDetailPage() {
     setDeleteError(null)
     try {
       await apiFetch(`/api/tenants/${tenant.id}/`, { method: 'DELETE' })
+      // The deleted tenant's row must not linger in the dashboard's cached
+      // ['cross-tenant-report'] list.
+      queryClient.invalidateQueries({ queryKey: ['cross-tenant-report'] })
       navigate('/dashboard')
     } catch (err) {
       setDeleteError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_delete_error'))
@@ -611,6 +623,8 @@ export default function TenantDetailPage() {
   const totalEarned = branches.reduce((sum, b) => sum + b.total_earned, 0)
   const totalSpent = branches.reduce((sum, b) => sum + b.total_spent, 0)
   const totalOutstanding = branches.reduce((sum, b) => sum + b.outstanding, 0)
+  const earnedTrend = weekOverWeekTrend(daily, 'total_earned')
+  const spentTrend = weekOverWeekTrend(daily, 'total_spent')
 
   return (
     <div>
@@ -619,23 +633,33 @@ export default function TenantDetailPage() {
         {t('tenant_detail_back_link')}
       </Link>
 
-      <div className="section-head" style={{ marginTop: 0 }}>
-        <div>
-          <span className="eyebrow">{t('eyebrow_tenant')}</span>
-          <h2 style={{ marginBottom: '0.2rem' }}>{tenant.name}</h2>
-          <p>
-            {t('tenant_detail_meta', {
-              slug: tenant.slug,
-              rate: tenant.cashback_rate,
-              status: activeStatusLabel(language, tenant.is_active ? 'active' : 'inactive'),
-            })}
-          </p>
-        </div>
-        <button type="button" className="ghost danger" onClick={() => setDeleteOpen(true)}>
-          <IconTrash />
-          {t('tenant_detail_delete_button')}
-        </button>
-      </div>
+      <PageHeader
+        eyebrow={t('eyebrow_tenant')}
+        title={tenant.name}
+        description={t('tenant_detail_meta', {
+          slug: tenant.slug,
+          rate: tenant.cashback_rate,
+          status: activeStatusLabel(language, tenant.is_active ? 'active' : 'inactive'),
+        })}
+        actions={
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
+            <ActiveToggle<Tenant>
+              endpoint={`/api/tenants/${tenant.id}/`}
+              isActive={tenant.is_active}
+              onSaved={(updated) => {
+                setTenant(updated)
+                // The dashboard's cached ['cross-tenant-report'] status
+                // badge for this tenant would otherwise stay stale.
+                queryClient.invalidateQueries({ queryKey: ['cross-tenant-report'] })
+              }}
+            />
+            <button type="button" className="ghost danger" onClick={() => setDeleteOpen(true)}>
+              <IconTrash />
+              {t('tenant_detail_delete_button')}
+            </button>
+          </div>
+        }
+      />
 
       {deleteError && (
         <div className="error-banner">
@@ -645,13 +669,20 @@ export default function TenantDetailPage() {
       )}
 
       <div className="stat-grid">
-        <StatCard icon={<IconTrendUp />} label={t('label_earned')} value={totalEarned.toLocaleString()} sub={t('sub_som')} />
+        <StatCard
+          icon={<IconTrendUp />}
+          label={t('label_earned')}
+          value={totalEarned.toLocaleString()}
+          sub={t('sub_som')}
+          trend={earnedTrend ?? undefined}
+        />
         <StatCard
           icon={<IconTrendDown />}
           label={t('label_spent')}
           value={totalSpent.toLocaleString()}
           tone="warning"
           sub={t('sub_som')}
+          trend={spentTrend ?? undefined}
         />
         <StatCard
           icon={<IconScale />}
@@ -710,34 +741,24 @@ export default function TenantDetailPage() {
       <div className="section-head">
         <h2>{t('label_branches')}</h2>
       </div>
-      <div className="table-card">
-        {branches.length === 0 ? (
+      {branches.length === 0 ? (
+        <div className="table-card">
           <EmptyState icon={<IconClipboardEmpty />} title={t('empty_no_transactions_yet')} />
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('th_branch')}</th>
-                  <th>{t('label_earned')}</th>
-                  <th>{t('label_spent')}</th>
-                  <th>{t('label_outstanding')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {branches.map((row) => (
-                  <tr key={row.branch_id ?? row.branch_name}>
-                    <td>{row.branch_name}</td>
-                    <td className="num">{row.total_earned.toLocaleString()}</td>
-                    <td className="num">{row.total_spent.toLocaleString()}</td>
-                    <td className="num">{row.outstanding.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="perf-grid">
+          {branches.map((row) => (
+            <BranchPerformanceCard
+              key={row.branch_id ?? row.branch_name}
+              name={row.branch_name}
+              earned={row.total_earned}
+              spent={row.total_spent}
+              outstanding={row.outstanding}
+              labels={{ earned: t('label_earned'), spent: t('label_spent'), outstanding: t('label_outstanding') }}
+            />
+          ))}
+        </div>
+      )}
 
       <div className="section-head">
         <h2>{t('last_14_days')}</h2>

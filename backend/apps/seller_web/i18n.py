@@ -3,11 +3,12 @@
 Same lightweight dict approach as apps.bot.i18n — no gettext/.po pipeline,
 since the string set is small and confined to this app.
 
-Unlike the bot (where language is a Customer field the customer picks at
-registration) or the React admin panel (where it's a browser localStorage
-choice), a seller has no profile field for this and the page is plain
-server-rendered HTML — so the preference lives in a cookie, set by
-`set_language` below.
+Like the bot (where language is a Customer field picked at registration),
+a logged-in seller's preference lives on UserProfile.language — the same
+field the React admin panel's profile drawer writes via PATCH /api/me/, so
+switching it there is reflected here too (see get_language below). The
+`seller_lang` cookie set by `set_language` is only the fallback for the
+pre-login screens, where no request.user.profile exists yet.
 """
 
 from django.http import HttpRequest
@@ -138,70 +139,6 @@ _STRINGS = {
         "en": "{spent} points redeemed, {earned} more points added. New balance: {balance}.",
         "ru": "Использовано {spent} баллов, начислено ещё {earned}. Новый баланс: {balance}.",
     },
-
-    "profile_link": {"uz": "Profil", "en": "Profile", "ru": "Профиль"},
-    "profile_page_title": {"uz": "Mening profilim", "en": "My profile", "ru": "Мой профиль"},
-    "profile_heading": {"uz": "Mening profilim", "en": "My profile", "ru": "Мой профиль"},
-    "profile_login_label": {"uz": "Login", "en": "Login", "ru": "Логин"},
-    "profile_full_name_label": {"uz": "To'liq ismi", "en": "Full name", "ru": "Полное имя"},
-    "profile_phone_label": {"uz": "Telefon raqami", "en": "Phone number", "ru": "Номер телефона"},
-    "profile_change_photo": {"uz": "Rasm tanlash", "en": "Change photo", "ru": "Изменить фото"},
-    "profile_remove_photo": {
-        "uz": "Rasmni olib tashlash",
-        "en": "Remove photo",
-        "ru": "Удалить фото",
-    },
-    "profile_save_button": {"uz": "Saqlash", "en": "Save", "ru": "Сохранить"},
-    "profile_back_link": {"uz": "Kassaga qaytish", "en": "Back to the till", "ru": "Назад к кассе"},
-    "profile_saved": {"uz": "Profil saqlandi.", "en": "Profile saved.", "ru": "Профиль сохранён."},
-    "profile_form_invalid": {
-        "uz": "Iltimos, ismi va telefon raqamini tekshiring.",
-        "en": "Please check the name and phone number.",
-        "ru": "Пожалуйста, проверьте имя и номер телефона.",
-    },
-    "profile_avatar_invalid_type": {
-        "uz": "Faqat rasm fayli yuklash mumkin.",
-        "en": "Only an image file can be uploaded.",
-        "ru": "Можно загружать только файл изображения.",
-    },
-    "profile_avatar_too_large": {
-        "uz": "Rasm hajmi {size}MB dan oshmasligi kerak.",
-        "en": "The image must not exceed {size}MB.",
-        "ru": "Размер изображения не должен превышать {size} МБ.",
-    },
-    "profile_language_label": {"uz": "Til", "en": "Language", "ru": "Язык"},
-
-    "password_section_heading": {
-        "uz": "Parolni almashtirish",
-        "en": "Change password",
-        "ru": "Смена пароля",
-    },
-    "current_password_label": {
-        "uz": "Joriy parol",
-        "en": "Current password",
-        "ru": "Текущий пароль",
-    },
-    "new_password_label": {"uz": "Yangi parol", "en": "New password", "ru": "Новый пароль"},
-    "confirm_new_password_label": {
-        "uz": "Yangi parolni takrorlang",
-        "en": "Confirm new password",
-        "ru": "Повторите новый пароль",
-    },
-    "change_password_button": {
-        "uz": "Parolni almashtirish",
-        "en": "Change password",
-        "ru": "Сменить пароль",
-    },
-    "password_changed": {
-        "uz": "Parol muvaffaqiyatli almashtirildi.",
-        "en": "Password changed successfully.",
-        "ru": "Пароль успешно изменён.",
-    },
-    "password_change_error": {
-        "uz": "Parolni almashtirib bo'lmadi. Quyidagi xatolarni tekshiring.",
-        "en": "Couldn't change the password. Check the errors below.",
-        "ru": "Не удалось изменить пароль. Проверьте ошибки ниже.",
-    },
 }
 
 
@@ -220,5 +157,13 @@ def strings_for(language: str) -> dict[str, str]:
 
 
 def get_language(request: HttpRequest) -> str:
+    # Logged-in users carry their language on UserProfile (the same field
+    # the React admin panel's profile drawer writes to via PATCH /api/me/),
+    # so a language change there is reflected here without needing a second,
+    # seller-web-only switcher. The cookie is only the pre-login fallback
+    # (login/forbidden screens before request.user.profile is known).
+    profile = getattr(getattr(request, "user", None), "profile", None)
+    if profile is not None and profile.language in LANGUAGES:
+        return profile.language
     raw = request.COOKIES.get(LANGUAGE_COOKIE, DEFAULT_LANGUAGE)
     return raw if raw in LANGUAGES else DEFAULT_LANGUAGE

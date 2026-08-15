@@ -49,14 +49,29 @@ class TenantMiddleware:
         return getattr(profile, "tenant", None)
 
     def _resolve_user(self, request):
-        user = getattr(request, "user", None)
-        if user is not None and getattr(user, "is_authenticated", False):
-            return user
+        # JWT first, session as fallback — not the reverse. A browser can
+        # legitimately carry both an unrelated Django session cookie (e.g.
+        # a seller_web login from earlier, on a different tenant) and a
+        # JWT bearer token (the React panel) at the same time, since both
+        # ride the same origin. DRF's own view-level auth only ever
+        # consults the JWT (REST_FRAMEWORK.DEFAULT_AUTHENTICATION_CLASSES
+        # has no SessionAuthentication) — checking the session first here
+        # would bind this request's tenant context to the *session's*
+        # tenant while permission checks and request.user in the view use
+        # the JWT's tenant, a split-brain that silently scopes
+        # TenantManager-filtered queries (CLAUDE.md §4) to the wrong
+        # tenant instead of 403/404ing. Only fall back to the session when
+        # there's no JWT to decode (plain session-based apps: seller_web,
+        # Django admin, accounts web login never send an Authorization
+        # header, so this is a no-op behavior change for them).
         try:
             result = self._jwt_auth.authenticate(request)
         except Exception:
-            return None
-        if result is None:
-            return None
-        jwt_user, _ = result
-        return jwt_user
+            result = None
+        if result is not None:
+            jwt_user, _ = result
+            return jwt_user
+        user = getattr(request, "user", None)
+        if user is not None and getattr(user, "is_authenticated", False):
+            return user
+        return None

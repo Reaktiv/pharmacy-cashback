@@ -50,6 +50,35 @@ def test_can_update_own_name_and_phone(api_client_for, make_user, make_tenant):
 
 
 @pytest.mark.django_db
+def test_can_update_own_language(api_client_for, make_user, make_tenant):
+    """UserProfile.language is the single source of truth shared with the
+    seller-web till pages (apps.seller_web.i18n.get_language) — this is
+    what the React profile drawer's language switcher writes."""
+    tenant = make_tenant("t")
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant)
+    client = api_client_for(manager)
+
+    response = client.patch("/api/me/", {"language": "ru"})
+
+    assert response.status_code == 200
+    manager.profile.refresh_from_db()
+    assert manager.profile.language == "ru"
+
+
+@pytest.mark.django_db
+def test_updating_own_language_rejects_unsupported_code(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant)
+    client = api_client_for(manager)
+
+    response = client.patch("/api/me/", {"language": "fr"})
+
+    assert response.status_code == 400
+    manager.profile.refresh_from_db()
+    assert manager.profile.language == "uz"
+
+
+@pytest.mark.django_db
 def test_seller_editing_own_profile_updates_the_linked_seller_row_too(
     api_client_for, make_tenant, make_branch, make_seller
 ):

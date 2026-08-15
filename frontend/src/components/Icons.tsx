@@ -76,9 +76,9 @@ export function IconChartBar({ className }: IconProps) {
 export function IconLogout({ className }: IconProps) {
   return (
     <svg {...base} className={className} aria-hidden="true">
-      <path d="M15 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2" />
-      <path d="M10 8l-4 4 4 4" />
-      <path d="M14 12H3" />
+      <path d="M10 8V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2" />
+      <path d="M15 12H3l3-3" />
+      <path d="M6 15l-3-3" />
     </svg>
   )
 }

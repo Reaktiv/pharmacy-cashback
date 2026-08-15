@@ -1,5 +1,10 @@
+import hashlib
+
 from django.db import transaction as db_transaction
 from django.http import FileResponse, Http404
+from django.utils.cache import patch_cache_control
+from django.utils.decorators import method_decorator
+from django.views.decorators.http import condition
 from rest_framework import generics, permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
@@ -10,6 +15,26 @@ from apps.accounts.permissions import IsSuperadmin, IsTenantAdmin
 from apps.audit.services import log_action
 from apps.tenants.models import Bot, GlobalSettings, Tenant
 from apps.tenants.serializers import BotSerializer, GlobalSettingsSerializer, TenantSerializer
+
+
+def _platform_branding_etag(request, *args, **kwargs):
+    """PlatformBrandingView has no single field that already identifies a
+    version the way the logo's upload filename does, so the ETag is a hash
+    of the two fields that make up its response body — it changes exactly
+    when platform_name or platform_logo.name changes, and not otherwise."""
+    gs = GlobalSettings.load()
+    raw = f"{gs.platform_name}:{gs.platform_logo.name if gs.platform_logo else ''}"
+    return hashlib.md5(raw.encode(), usedforsecurity=False).hexdigest()
+
+
+def _platform_logo_etag(request, *args, **kwargs):
+    """platform_logo_upload_path() (models.py) gives every upload a fresh
+    uuid4 filename rather than overwriting the old one, so the storage
+    name itself is already a unique version identifier — no hashing or
+    extra field needed. None (no logo) disables conditional handling and
+    PlatformLogoView.get() falls through to its own 404."""
+    gs = GlobalSettings.load()
+    return gs.platform_logo.name if gs.platform_logo else None
 
 
 class TenantViewSet(viewsets.ModelViewSet):
@@ -166,9 +191,12 @@ class PlatformBrandingView(APIView):
 
     permission_classes = [permissions.AllowAny]
 
+    @method_decorator(condition(etag_func=_platform_branding_etag))
     def get(self, request):
         gs = GlobalSettings.load()
-        return Response({"name": gs.platform_name, "has_logo": bool(gs.platform_logo)})
+        response = Response({"name": gs.platform_name, "has_logo": bool(gs.platform_logo)})
+        patch_cache_control(response, public=True, max_age=60)
+        return response
 
 
 class PlatformLogoView(APIView):
@@ -177,11 +205,18 @@ class PlatformLogoView(APIView):
 
     permission_classes = [permissions.AllowAny]
 
+    @method_decorator(condition(etag_func=_platform_logo_etag))
     def get(self, request):
         gs = GlobalSettings.load()
         if not gs.platform_logo:
             raise Http404
-        return FileResponse(gs.platform_logo.open("rb"), content_type="application/octet-stream")
+        response = FileResponse(gs.platform_logo.open("rb"), content_type="application/octet-stream")
+        # Longer than PlatformBrandingView's max-age: a logo changes even
+        # less often than the name, and re-uploads get a brand new
+        # (uuid4-named) file/ETag anyway, so a longer window here doesn't
+        # risk serving a stale image past its cache lifetime.
+        patch_cache_control(response, public=True, max_age=300)
+        return response
 
 
 class BotViewSet(viewsets.ModelViewSet):

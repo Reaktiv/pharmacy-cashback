@@ -418,6 +418,79 @@ const STRINGS = {
     en: 'Sets the total number of branches this pharmacy can add. Leave empty for unlimited.',
     ru: 'Определяет общее число филиалов, которые может добавить эта аптека. Оставьте пустым — без ограничений.',
   },
+  tenant_admin_limits_card_heading: {
+    uz: 'Keshbek va limitlar',
+    en: 'Cashback & limits',
+    ru: 'Кешбэк и лимиты',
+  },
+  tenant_admin_limits_save_error: {
+    uz: "Sozlamalarni saqlab bo'lmadi.",
+    en: "Couldn't save the settings.",
+    ru: 'Не удалось сохранить настройки.',
+  },
+  tenant_admin_receipt_card_heading: {
+    uz: 'QR-chek orqali cashback (bot)',
+    en: 'QR-receipt cashback (bot)',
+    ru: 'Кешбэк по QR-чеку (бот)',
+  },
+  tenant_admin_receipt_save_error: {
+    uz: "Sozlamalarni saqlab bo'lmadi.",
+    en: "Couldn't save the settings.",
+    ru: 'Не удалось сохранить настройки.',
+  },
+  field_receipt_tin: {
+    uz: 'Dorixonaning STIR raqami',
+    en: "Pharmacy's STIR (tax ID)",
+    ru: 'СТИР (ИНН) аптеки',
+  },
+  field_receipt_tin_hint: {
+    uz: "Mijoz botga chek surati yuborsa, faqat shu STIR'ga tegishli cheklar "
+      + "qabul qilinadi. Bo'sh bo'lsa, botda bu funksiya o'chirilgan.",
+    en: 'When a customer sends a receipt photo to the bot, only receipts issued '
+      + 'under this STIR are accepted. Leave empty to keep the bot feature off.',
+    ru: 'Когда клиент присылает боту фото чека, принимаются только чеки, '
+      + 'выданные по этому СТИР. Оставьте пустым, чтобы отключить функцию.',
+  },
+  field_receipt_branch: {
+    uz: 'Cashback yoziladigan filial',
+    en: 'Branch to credit cashback to',
+    ru: 'Филиал для начисления кешбэка',
+  },
+  field_receipt_branch_hint: {
+    uz: 'QR-chek orqali kelgan cashback shu filialga yoziladi.',
+    en: 'Bot-verified receipts credit cashback to this branch.',
+    ru: 'Кешбэк по чекам, проверенным ботом, начисляется на этот филиал.',
+  },
+  field_min_redeem_amount: {
+    uz: "Ishlatish uchun minimal chek summasi",
+    en: 'Minimum check amount to redeem',
+    ru: 'Минимальная сумма чека для списания',
+  },
+  field_min_redeem_amount_hint: {
+    uz: "Chek shu summadan kam bo'lsa, mijoz ballarni ishlata olmaydi (lekin ball ishlab olishda cheklov yo'q).",
+    en: "Below this check total, points can be earned but not redeemed.",
+    ru: 'Если сумма чека меньше этого значения, баллы можно начислить, но нельзя списать.',
+  },
+  field_points_expiry_days: {
+    uz: 'Ballar amal qilish muddati (kun)',
+    en: 'Points expiry (days)',
+    ru: 'Срок действия баллов (дней)',
+  },
+  field_points_expiry_days_hint: {
+    uz: "Ball necha kundan keyin yonadi. Bo'sh qoldiring — hech qachon tugamaydi.",
+    en: 'How many days until earned points expire. Leave empty for never.',
+    ru: 'Через сколько дней сгорают начисленные баллы. Оставьте пустым — никогда.',
+  },
+  field_default_daily_txn_limit: {
+    uz: "Sotuvchilar uchun kunlik limit (standart)",
+    en: 'Default daily limit for sellers',
+    ru: 'Дневной лимит для продавцов (по умолчанию)',
+  },
+  field_default_daily_txn_limit_hint: {
+    uz: "Alohida limiti belgilanmagan har bir sotuvchi kuniga shuncha marta sotuv/ishlatish yoza oladi. Bo'sh qoldiring — cheklanmagan.",
+    en: "Sellers without their own limit can record this many earn/redeem transactions per day. Leave empty for unlimited.",
+    ru: 'Продавцы без собственного лимита могут провести столько операций начисления/списания в день. Оставьте пустым — без ограничений.',
+  },
   th_branch: { uz: 'Filial', en: 'Branch', ru: 'Филиал' },
   last_14_days: { uz: "So'nggi 14 kun", en: 'Last 14 days', ru: 'Последние 14 дней' },
   tenant_delete_step1_title: { uz: "Dorixonani o'chirasizmi?", en: 'Delete this pharmacy?', ru: 'Удалить аптеку?' },
@@ -543,6 +616,21 @@ const STRINGS = {
     en: 'Assign an admin to a branch',
     ru: 'Назначить администратора филиалу',
   },
+  settings_group_identity_description: {
+    uz: "Bot va kassa sahifasida ko'rinadigan dorixona nomi va logotipi.",
+    en: "The pharmacy's name and logo, shown in the bot and the till page.",
+    ru: 'Название и логотип аптеки — видны в боте и на странице кассы.',
+  },
+  settings_group_cashback_description: {
+    uz: "Mijozlarga qaytariladigan foiz va tranzaksiyalar bo'yicha cheklovlar.",
+    en: "The rate returned to customers, and limits on redemption/transactions.",
+    ru: 'Процент, возвращаемый клиентам, и ограничения по транзакциям.',
+  },
+  settings_group_branches_description: {
+    uz: 'Yangi filial oching va unga admin tayinlang.',
+    en: 'Open a new branch and assign it an admin.',
+    ru: 'Откройте новый филиал и назначьте ему администратора.',
+  },
 
   // ---- SellersPage ----
   sellers_delete_error: { uz: "Sotuvchini o'chirib bo'lmadi.", en: "Couldn't delete the seller.", ru: 'Не удалось удалить продавца.' },
@@ -561,6 +649,16 @@ const STRINGS = {
   seller_delete_button: { uz: "Sotuvchini o'chirish", en: 'Delete seller', ru: 'Удалить продавца' },
   unlimited: { uz: 'Cheklanmagan', en: 'Unlimited', ru: 'Без ограничений' },
   seller_delete_title: { uz: "Sotuvchini o'chirasizmi?", en: 'Delete this seller?', ru: 'Удалить продавца?' },
+  field_daily_limit_hint: {
+    uz: "Bu sotuvchi kuniga necha marta sotuv/ishlatish yoza olishini belgilaydi. Bo'sh qoldiring — cheklanmagan.",
+    en: 'Sets how many earn/redeem transactions this seller can record per day. Leave empty for unlimited.',
+    ru: 'Определяет, сколько операций начисления/списания продавец может провести в день. Оставьте пустым — без ограничений.',
+  },
+  seller_daily_limit_save_error: {
+    uz: "Kunlik limitni saqlab bo'lmadi.",
+    en: "Couldn't save the daily limit.",
+    ru: 'Не удалось сохранить дневной лимит.',
+  },
 
   // ---- BroadcastsPage ----
   broadcast_media_still_uploading: {
@@ -691,6 +789,23 @@ const STRINGS = {
     ru: 'Филиалы — начислено / потрачено / остаток',
   },
   last_30_days: { uz: "So'nggi 30 kun", en: 'Last 30 days', ru: 'Последние 30 дней' },
+  eyebrow_reports: { uz: 'Hisobotlar', en: 'Reports', ru: 'Отчёты' },
+  eyebrow_platform: { uz: 'Platforma', en: 'Platform', ru: 'Платформа' },
+  reports_page_description: {
+    uz: 'Keshbek aylanmasi, sotuvchilar faoliyati va filiallar samaradorligi bir joyda.',
+    en: 'Cashback turnover, seller activity, and branch performance in one place.',
+    ru: 'Оборот кешбэка, активность продавцов и эффективность филиалов в одном месте.',
+  },
+  reports_branch_performance_heading: {
+    uz: 'Filiallar samaradorligi',
+    en: 'Branch performance',
+    ru: 'Эффективность филиалов',
+  },
+  reports_trend_heading: { uz: "Sotuv va keshbek dinamikasi", en: 'Sales & cashback trend', ru: 'Динамика продаж и кешбэка' },
+  reports_stat_seller_count: { uz: 'Faol sotuvchilar', en: 'Active sellers', ru: 'Активные продавцы' },
+  reports_stat_total_txns: { uz: 'Jami tranzaksiyalar', en: 'Total transactions', ru: 'Всего транзакций' },
+  reports_stat_avg_check: { uz: "O'rtacha chek", en: 'Average check', ru: 'Средний чек' },
+  trend_vs_prior_week: { uz: "o'tgan haftaga nisbatan", en: 'vs. prior week', ru: 'к прошлой неделе' },
 
   // ---- api/client.ts (used outside React, via translate()) ----
   api_request_failed: {
@@ -712,6 +827,13 @@ const STRINGS = {
   },
   status_active: { uz: 'Faol', en: 'Active', ru: 'Активен' },
   status_inactive: { uz: 'Faol emas', en: 'Inactive', ru: 'Неактивен' },
+  activate_button: { uz: 'Faollashtirish', en: 'Activate', ru: 'Активировать' },
+  deactivate_button: { uz: 'Faolsizlantirish', en: 'Deactivate', ru: 'Деактивировать' },
+  active_toggle_error: {
+    uz: "Holatni o'zgartirib bo'lmadi.",
+    en: "Couldn't change the status.",
+    ru: 'Не удалось изменить статус.',
+  },
   broadcast_status_draft: { uz: 'Qoralama', en: 'Draft', ru: 'Черновик' },
   broadcast_status_sending: { uz: 'Yuborilmoqda', en: 'Sending', ru: 'Отправляется' },
   broadcast_status_sent: { uz: 'Yuborildi', en: 'Sent', ru: 'Отправлено' },

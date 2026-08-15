@@ -1,9 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import type { CrossTenantDashboardRow, Tenant } from '../api/types'
 import { activeStatusLabel } from '../lib/labels'
 import { useLanguage } from '../lib/i18n'
+import PageHeader from '../components/PageHeader'
 import StatCard from '../components/StatCard'
 import EmptyState from '../components/EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
@@ -12,6 +14,7 @@ import { IconAlertCircle, IconBuilding, IconUsers, IconReceipt, IconWallet, Icon
 
 function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { t } = useLanguage()
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
@@ -28,6 +31,11 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
         method: 'POST',
         body: JSON.stringify({ name, slug, cashback_rate: cashbackRate }),
       })
+      // The dashboard's cached ['cross-tenant-report'] now excludes the
+      // tenant just created — mark it stale so navigating back to /dashboard
+      // (whether right after this or later) refetches instead of showing a
+      // list that's missing the tenant the user just added.
+      queryClient.invalidateQueries({ queryKey: ['cross-tenant-report'] })
       navigate(`/tenants/${created.id}`)
     } catch (err) {
       setError(err instanceof ApiError ? JSON.stringify(err.data) : t('dashboard_create_tenant_error'))
@@ -78,26 +86,31 @@ function NewTenantDrawer({ open, onClose }: { open: boolean; onClose: () => void
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { t, language } = useLanguage()
-  const [rows, setRows] = useState<CrossTenantDashboardRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
 
-  useEffect(() => {
-    apiFetch<CrossTenantDashboardRow[]>('/api/reports/cross-tenant/')
-      .then(setRows)
-      .catch((err) => setError(err.message))
-  }, [])
+  // The heaviest, most-viewed endpoint in the app (full cross-tenant
+  // aggregation, every superadmin lands here) — the queryKey is scoped to
+  // this page's data specifically (not shared with ['me']'s global scope)
+  // so it doesn't collide with other per-page keys as more pages migrate.
+  const {
+    data: rows,
+    error,
+    isPending,
+  } = useQuery({
+    queryKey: ['cross-tenant-report'],
+    queryFn: () => apiFetch<CrossTenantDashboardRow[]>('/api/reports/cross-tenant/'),
+  })
 
   if (error) {
     return (
       <div className="error-banner">
         <IconAlertCircle />
-        <span>{error}</span>
+        <span>{error.message}</span>
       </div>
     )
   }
 
-  if (!rows) {
+  if (isPending) {
     return (
       <div>
         <SkeletonStatGrid count={4} />
@@ -113,6 +126,8 @@ export default function DashboardPage() {
 
   return (
     <div>
+      <PageHeader eyebrow={t('eyebrow_platform')} title={t('page_title_dashboard')} />
+
       <div className="stat-grid">
         <StatCard
           icon={<IconBuilding />}

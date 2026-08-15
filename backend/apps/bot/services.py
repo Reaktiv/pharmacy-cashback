@@ -19,6 +19,7 @@ from apps.ledger.services import (
     claim_pending_cashback,
     flag_transaction,
     get_balance,
+    post_earn_transaction,
 )
 from apps.tenants.models import GlobalSettings, Tenant
 
@@ -184,6 +185,55 @@ def format_notification_text(txn: Transaction) -> str:
                 parts.append(t(language, "notif_generic"))
     parts.append(t(language, "notif_balance_suffix", balance=get_balance(txn.customer)))
     return "\n".join(parts)
+
+
+def handle_receipt_check_data(
+    *, tenant: Tenant, customer: Customer, check_data: dict
+) -> str | None:
+    """Bot-only earn path (apps/bot/tasks.py::process_receipt_photo): a
+    customer photographs their fiscal receipt's QR code, the bot reads the
+    sale off ofd.soliq.uz (check_data, already trimmed to tin/cash_total/
+    card_total/terminal_id/payment_no by _fetch_receipt_via_playwright),
+    and this credits cashback the same way a seller's manual entry would —
+    via post_earn_transaction, so every domain rule (rate snapshot,
+    rounding, hard limits) applies identically, and the receipt's own
+    terminal+payment number becomes the idempotency key so re-scanning the
+    same receipt is a no-op rather than double-crediting.
+
+    Returns a rejection message to show the customer, or None on success —
+    post_earn_transaction's on_commit hook already fires the usual
+    notify_transaction Celery task, so a second success message here would
+    be redundant."""
+    if not tenant.receipt_tin or tenant.receipt_branch_id is None:
+        return t(customer.language, "receipt_not_configured")
+
+    if str(check_data.get("tin")) != tenant.receipt_tin:
+        return t(customer.language, "receipt_wrong_tenant")
+
+    idempotency_key = f"receipt:{check_data.get('terminal_id')}:{check_data.get('payment_no')}"
+    already_used = (
+        Transaction.objects.all_tenants()
+        .filter(tenant=tenant, idempotency_key=idempotency_key)
+        .exists()
+    )
+    if already_used:
+        return t(customer.language, "receipt_already_used")
+
+    cash_total = Decimal(str(check_data.get("cash_total") or 0))
+    card_total = Decimal(str(check_data.get("card_total") or 0))
+    total = cash_total + card_total
+    if total <= 0:
+        return t(customer.language, "receipt_fetch_failed")
+
+    post_earn_transaction(
+        tenant=tenant,
+        branch=tenant.receipt_branch,
+        seller=None,
+        customer=customer,
+        check_amount=total,
+        idempotency_key=idempotency_key,
+    )
+    return None
 
 
 def handle_report(*, tenant: Tenant, telegram_id: int, transaction_id: int) -> str:

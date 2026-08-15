@@ -1,5 +1,6 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import { ApiError, clearTokens, getAccessToken, setTokens } from '../api/client'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { ApiError, clearTokens, getAccessToken, setTokens, SESSION_EXPIRED_EVENT } from '../api/client'
 import { decodeAccessToken } from '../api/jwt'
 import type { Role } from '../api/types'
 
@@ -48,30 +49,61 @@ function loadInitialUser(): AuthUser | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadInitialUser)
+  const queryClient = useQueryClient()
 
-  const login = async (username: string, password: string) => {
-    const response = await fetch('/api/auth/token/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    })
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}))
-      throw new ApiError(response.status, data)
-    }
-    const data = (await response.json()) as { access: string; refresh: string }
-    setTokens(data.access, data.refresh)
-    sessionStorage.setItem(USERNAME_KEY, username)
-    setUser(userFromToken(data.access, username))
-  }
+  const login = useCallback(
+    async (username: string, password: string) => {
+      const response = await fetch('/api/auth/token/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new ApiError(response.status, data)
+      }
+      const data = (await response.json()) as { access: string; refresh: string }
+      setTokens(data.access, data.refresh)
+      sessionStorage.setItem(USERNAME_KEY, username)
+      setUser(userFromToken(data.access, username))
+    },
+    // No queryClient.clear() needed here: login() is only ever reachable
+    // with an empty cache. LoginPage redirects away immediately whenever
+    // `user` is truthy (see its `if (user) return <Navigate>` guard), so
+    // this form can't be submitted while already authenticated — every
+    // path into login() has either come through logout() (cache already
+    // cleared there) or a fresh tab (cache never populated).
+    [],
+  )
 
-  const logout = () => {
+  const logout = useCallback(() => {
     clearTokens()
     sessionStorage.removeItem(USERNAME_KEY)
+    // The single point every session-ending path funnels through — the
+    // "Chiqish" button (Layout.tsx's ConfirmDialog onConfirm={logout}) and
+    // the SESSION_EXPIRED_EVENT listener below (a silently-expired refresh
+    // token). Clearing the whole cache here, not just ['me'], means every
+    // future useQuery migration (Dashboard, Reports, Sellers, ...) is
+    // automatically covered by this same session boundary without needing
+    // its own cleanup logic. Matches the "one tab = one identity" invariant
+    // sessionStorage already enforces for the tokens themselves (see
+    // api/client.ts).
+    queryClient.clear()
     setUser(null)
-  }
+  }, [queryClient])
 
-  const value = useMemo(() => ({ user, login, logout }), [user])
+  // api/client.ts is a plain module — when a refresh token turns out to be
+  // dead mid-request, it can clear sessionStorage but has no way to reach
+  // this component's state. It dispatches SESSION_EXPIRED_EVENT instead;
+  // without this listener, `user` would stay truthy forever after a
+  // refresh failure (nothing else ever sets it to null), so ProtectedRoute
+  // never redirects and the page just hangs with every request 401ing.
+  useEffect(() => {
+    window.addEventListener(SESSION_EXPIRED_EVENT, logout)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, logout)
+  }, [logout])
+
+  const value = useMemo(() => ({ user, login, logout }), [user, login, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

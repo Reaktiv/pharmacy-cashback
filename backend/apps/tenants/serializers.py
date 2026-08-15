@@ -1,6 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.accounts.models import Branch
 from apps.bot.telegram_client import TelegramTokenValidationError, validate_bot_token
 from apps.tenants.models import Bot, GlobalSettings, Tenant
 
@@ -18,6 +19,14 @@ class TenantSerializer(serializers.ModelSerializer):
     has_logo = serializers.SerializerMethodField()
     logo = serializers.FileField(write_only=True, required=False)
     remove_logo = serializers.BooleanField(write_only=True, required=False, default=False)
+    # Explicit field + all_tenants() queryset for the same reason as
+    # BotSerializer.tenant above: a superadmin request has no single
+    # tenant bound, so Branch.objects (tenant-context-filtered) would
+    # raise TenantContextError here. validate_receipt_branch below does
+    # the real "does this branch belong to this tenant" check instead.
+    receipt_branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.all_tenants(), required=False, allow_null=True
+    )
 
     class Meta:
         model = Tenant
@@ -37,6 +46,8 @@ class TenantSerializer(serializers.ModelSerializer):
             "has_logo",
             "logo",
             "remove_logo",
+            "receipt_tin",
+            "receipt_branch",
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
@@ -81,6 +92,13 @@ class TenantSerializer(serializers.ModelSerializer):
             )
             .count()
         )
+
+    def validate_receipt_branch(self, value):
+        if value is not None:
+            tenant_id = self.instance.id if self.instance is not None else None
+            if value.tenant_id != tenant_id:
+                raise serializers.ValidationError("Bu filial ushbu dorixonaga tegishli emas.")
+        return value
 
     def validate_cashback_rate(self, value):
         cap = GlobalSettings.load().max_cashback_rate

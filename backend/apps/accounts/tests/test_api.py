@@ -482,6 +482,79 @@ def test_tenant_admin_cannot_delete_a_seller(
 
 
 @pytest.mark.django_db
+def test_branch_manager_can_set_a_daily_limit_when_creating_a_seller(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    """CLAUDE.md §8: per-seller daily transaction limit is a fraud
+    mitigation the branch manager sets — writable at creation time."""
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.post(
+        "/api/sellers/",
+        {
+            "branch": branch.id,
+            "phone": "+998900000099",
+            "full_name": "New Seller",
+            "username": "newseller",
+            "password": "somepass123",
+            "daily_txn_limit": 20,
+        },
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.data["daily_txn_limit"] == 20
+    seller = Seller.objects.all_tenants().get(pk=response.data["id"])
+    assert seller.daily_txn_limit == 20
+
+
+@pytest.mark.django_db
+def test_branch_manager_can_update_a_sellers_daily_limit(
+    api_client_for, make_user, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.patch(f"/api/sellers/{seller.id}/", {"daily_txn_limit": 5}, format="json")
+
+    assert response.status_code == 200
+    seller.refresh_from_db()
+    assert seller.daily_txn_limit == 5
+
+    # Clearing it back out (empty in the UI) must restore "unlimited", not
+    # leave the previous number stuck.
+    response = client.patch(f"/api/sellers/{seller.id}/", {"daily_txn_limit": None}, format="json")
+
+    assert response.status_code == 200
+    seller.refresh_from_db()
+    assert seller.daily_txn_limit is None
+
+
+@pytest.mark.django_db
+def test_branch_manager_cannot_update_a_sellers_daily_limit_in_another_branch(
+    api_client_for, make_user, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t")
+    branch_a = make_branch(tenant, name="A")
+    branch_b = make_branch(tenant, name="B")
+    seller_b = make_seller(tenant, branch_b)
+    manager_a = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch_a)
+    client = api_client_for(manager_a)
+
+    response = client.patch(f"/api/sellers/{seller_b.id}/", {"daily_txn_limit": 5}, format="json")
+
+    assert response.status_code == 404
+    seller_b.refresh_from_db()
+    assert seller_b.daily_txn_limit is None
+
+
+@pytest.mark.django_db
 def test_superadmin_can_create_a_tenant_admin_with_login(api_client_for, make_user, make_tenant):
     tenant = make_tenant("t")
     superadmin = make_user(role=UserProfile.Role.SUPERADMIN)

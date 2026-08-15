@@ -1,10 +1,16 @@
-<div class="language-switcher" role="group" aria-label="Til">
-  {% for code in languages %}
-  <form method="post" action="{% url 'seller_web:set_language' %}" style="display:contents">
-    {% csrf_token %}
-    <input type="hidden" name="language" value="{{ code }}">
-    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-    <button type="submit"{% if code == language %} class="active"{% endif %}>{{ code|upper }}</button>
-  </form>
-  {% endfor %}
+<div class="lang-dropdown" data-lang-dropdown>
+  <button type="button" class="lang-dropdown-trigger" data-lang-trigger aria-haspopup="listbox" aria-expanded="false">
+    {{ language|upper }}
+    <svg class="lang-dropdown-chevron" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <div class="lang-dropdown-menu" role="listbox">
+    {% for code in languages %}
+    <form method="post" action="{% url 'seller_web:set_language' %}">
+      {% csrf_token %}
+      <input type="hidden" name="language" value="{{ code }}">
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button type="submit" class="lang-dropdown-option{% if code == language %} active{% endif %}" role="option" aria-selected="{% if code == language %}true{% else %}false{% endif %}">{{ code|upper }}</button>
+    </form>
+    {% endfor %}
+  </div>
 </div>

@@ -17,16 +17,7 @@
     </div>
   </div>
   <div class="top-bar-actions">
-    <a href="{% url 'seller_web:profile' %}" class="profile-chip">
-      <span class="profile-chip-avatar">
-        {% if has_avatar %}
-          <img src="{% url 'seller_web:profile_avatar' %}" alt="">
-        {% else %}
-          {{ seller.full_name|slice:":2"|upper }}
-        {% endif %}
-      </span>
-      {{ s.profile_link }}
-    </a>
+    {% include "seller_web/_language_switcher.html" %}
     <form method="post" action="{% url 'accounts:logout' %}" data-confirm-logout>
       {% csrf_token %}
       <button type="submit" class="secondary danger">{{ s.logout }}</button>

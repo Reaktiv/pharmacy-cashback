@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { apiFetch } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type {
@@ -9,7 +10,11 @@ import type {
   SellerTransactionsPage,
 } from '../api/types'
 import { useLanguage, type TFunction } from '../lib/i18n'
-import StatCard from '../components/StatCard'
+import { weekOverWeekTrend } from '../lib/trend'
+import PageHeader from '../components/PageHeader'
+import StatCard, { TrendBadge } from '../components/StatCard'
+import SellerPerformanceCard from '../components/SellerPerformanceCard'
+import BranchPerformanceCard from '../components/BranchPerformanceCard'
 import EmptyState from '../components/EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
 import { DualBarChart, PieChart } from '../components/Charts'
@@ -20,7 +25,7 @@ import {
   IconScale,
   IconUsers,
   IconClipboardEmpty,
-  IconChevronDown,
+  IconReceipt,
 } from '../components/Icons'
 
 function formatDay(day: string): string {
@@ -46,53 +51,43 @@ const SELLER_HISTORY_PAGE_SIZE = 100
 
 function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
   const { t } = useLanguage()
-  const [page, setPage] = useState<SellerTransactionsPage | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
 
-  useEffect(() => {
-    setPage(null)
-    setError(null)
-    apiFetch<SellerTransactionsPage>(
-      `/api/reports/seller-transactions/?seller_id=${sellerId}&limit=${SELLER_HISTORY_PAGE_SIZE}`
-    )
-      .then(setPage)
-      .catch((err) => setError(err.message))
-  }, [sellerId])
-
-  const loadMore = () => {
-    if (!page || loadingMore) return
-    setLoadingMore(true)
-    apiFetch<SellerTransactionsPage>(
-      `/api/reports/seller-transactions/?seller_id=${sellerId}&limit=${SELLER_HISTORY_PAGE_SIZE}&offset=${page.results.length}`
-    )
-      .then((next) => setPage({ ...next, results: [...page.results, ...next.results] }))
-      .catch((err) => setError(err.message))
-      .finally(() => setLoadingMore(false))
-  }
+  const {
+    data,
+    error,
+    isPending,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['reports', 'seller-transactions', sellerId],
+    queryFn: ({ pageParam }) =>
+      apiFetch<SellerTransactionsPage>(
+        `/api/reports/seller-transactions/?seller_id=${sellerId}&limit=${SELLER_HISTORY_PAGE_SIZE}&offset=${pageParam}`,
+      ),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((n, p) => n + p.results.length, 0)
+      return loaded < lastPage.count ? loaded : undefined
+    },
+  })
 
   if (error) {
     return (
       <div className="error-banner">
         <IconAlertCircle />
-        <span>{error}</span>
+        <span>{error.message}</span>
       </div>
     )
   }
 
-  if (!page) return <SkeletonTable rows={4} />
+  if (isPending) return <SkeletonTable rows={4} />
 
-  const txns = page.results
-
+  const txns = data.pages.flatMap((p) => p.results)
+  const totals = data.pages[0].totals
   if (txns.length === 0) {
     return <EmptyState icon={<IconClipboardEmpty />} title={t('reports_seller_empty_title')} />
   }
-
-  // Totals come from the server and cover the seller's full history, not
-  // just the transactions currently loaded on the page below.
-  const totalSales = page.totals.check_amount
-  const totalEarned = page.totals.cashback_earned
-  const totalSpent = page.totals.cashback_spent
 
   return (
     <div>
@@ -137,15 +132,15 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
         </table>
       </div>
 
-      {txns.length < page.count && (
+      {hasNextPage && (
         <button
           type="button"
           className="secondary"
-          onClick={loadMore}
-          disabled={loadingMore}
+          onClick={() => fetchNextPage()}
+          disabled={isFetchingNextPage}
           style={{ marginTop: '0.75rem' }}
         >
-          {loadingMore ? t('reports_loading_more') : t('reports_load_more')}
+          {isFetchingNextPage ? t('reports_loading_more') : t('reports_load_more')}
         </button>
       )}
 
@@ -153,9 +148,9 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
         <h3 style={{ marginBottom: '1rem' }}>{t('reports_overall_stats_heading')}</h3>
         <PieChart
           data={[
-            { label: t('reports_pie_total_sales'), value: totalSales, color: 'var(--chart-sales)' },
-            { label: t('reports_pie_cashback_given'), value: totalEarned, color: 'var(--chart-earn)' },
-            { label: t('reports_pie_cashback_used'), value: totalSpent, color: 'var(--chart-spend)' },
+            { label: t('reports_pie_total_sales'), value: totals.check_amount, color: 'var(--chart-sales)' },
+            { label: t('reports_pie_cashback_given'), value: totals.cashback_earned, color: 'var(--chart-earn)' },
+            { label: t('reports_pie_cashback_used'), value: totals.cashback_spent, color: 'var(--chart-spend)' },
           ]}
         />
       </div>
@@ -168,58 +163,135 @@ export default function ReportsPage() {
   const { t } = useLanguage()
   const canSeeBranchAndDaily = user?.role === 'tenant_admin'
 
-  const [sellers, setSellers] = useState<SellerReportRow[] | null>(null)
-  const [branches, setBranches] = useState<BranchReportRow[] | null>(null)
-  const [daily, setDaily] = useState<DailyReportRow[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // Three independent queries rather than one Promise.all: branches/daily
+  // only apply to tenant_admin (enabled: canSeeBranchAndDaily), and a
+  // branch_manager revisiting this page after Dashboard/Sellers now reuses
+  // the cached sellers report instead of re-running the aggregation. No
+  // mutations happen anywhere on this page, so — unlike Dashboard/
+  // TenantDetail — there's nothing here that needs to invalidate anything.
+  const sellersQuery = useQuery({
+    queryKey: ['reports', 'sellers'],
+    queryFn: () => apiFetch<SellerReportRow[]>('/api/reports/sellers/'),
+  })
+  const branchesQuery = useQuery({
+    queryKey: ['reports', 'branches'],
+    queryFn: () => apiFetch<BranchReportRow[]>('/api/reports/branches/'),
+    enabled: canSeeBranchAndDaily,
+  })
+  const dailyQuery = useQuery({
+    queryKey: ['reports', 'daily'],
+    queryFn: () => apiFetch<DailyReportRow[]>('/api/reports/daily/?days=30'),
+    enabled: canSeeBranchAndDaily,
+  })
+
   const [expandedSellerId, setExpandedSellerId] = useState<number | null>(null)
 
-  useEffect(() => {
-    const requests: Promise<void>[] = [
-      apiFetch<SellerReportRow[]>('/api/reports/sellers/').then(setSellers),
-    ]
-    if (canSeeBranchAndDaily) {
-      requests.push(apiFetch<BranchReportRow[]>('/api/reports/branches/').then(setBranches))
-      requests.push(apiFetch<DailyReportRow[]>('/api/reports/daily/?days=30').then(setDaily))
-    }
-    Promise.all(requests).catch((err) => setError(err.message))
-  }, [canSeeBranchAndDaily])
+  const error = sellersQuery.error ?? branchesQuery.error ?? dailyQuery.error
 
   if (error) {
     return (
       <div className="error-banner">
         <IconAlertCircle />
-        <span>{error}</span>
+        <span>{error.message}</span>
       </div>
     )
   }
 
-  const stillLoading = !sellers || (canSeeBranchAndDaily && (!branches || !daily))
+  const stillLoading =
+    sellersQuery.isPending || (canSeeBranchAndDaily && (branchesQuery.isPending || dailyQuery.isPending))
 
   if (stillLoading) {
     return (
       <div>
-        <SkeletonStatGrid count={3} />
+        <SkeletonStatGrid count={4} />
         <SkeletonTable rows={8} />
       </div>
     )
   }
+
+  const sellers = sellersQuery.data!
+  const branches = branchesQuery.data ?? null
+  const daily = dailyQuery.data ?? null
 
   const totalEarned = (branches ?? []).reduce((sum, b) => sum + b.total_earned, 0)
   const totalSpent = (branches ?? []).reduce((sum, b) => sum + b.total_spent, 0)
   const totalOutstanding = (branches ?? []).reduce((sum, b) => sum + b.outstanding, 0)
   const flaggedTotal = sellers!.reduce((sum, s) => sum + s.flagged_count, 0)
 
+  const earnedTrend = daily ? weekOverWeekTrend(daily, 'total_earned') : null
+  const spentTrend = daily ? weekOverWeekTrend(daily, 'total_spent') : null
+
+  // branch_manager only sees their own sellers — no branch/daily data, so
+  // the overview row is built from what *is* available instead of being
+  // skipped entirely.
+  const sellerCount = sellers!.length
+  const totalTxns = sellers!.reduce((sum, s) => sum + s.txn_count, 0)
+  const blendedAvgCheck = totalTxns > 0 ? sellers!.reduce((sum, s) => sum + s.avg_check * s.txn_count, 0) / totalTxns : 0
+
+  const rankedSellers = [...sellers!].sort((a, b) => b.txn_count - a.txn_count)
+  const maxTxnCount = Math.max(1, ...rankedSellers.map((s) => s.txn_count))
+
   return (
     <div>
-      {canSeeBranchAndDaily && (
-        <div className="stat-grid">
-          <StatCard icon={<IconTrendUp />} label={t('label_earned')} value={totalEarned.toLocaleString()} sub={t('sub_som_total')} />
-          <StatCard icon={<IconTrendDown />} label={t('label_spent')} value={totalSpent.toLocaleString()} tone="warning" sub={t('sub_som_total')} />
-          <StatCard icon={<IconScale />} label={t('label_outstanding')} value={totalOutstanding.toLocaleString()} tone="success" sub={t('sub_som')} />
-          <StatCard icon={<IconUsers />} label={t('reports_stat_flagged')} value={flaggedTotal} tone="teal" sub={t('reports_stat_flagged_sub')} />
-        </div>
-      )}
+      <PageHeader
+        eyebrow={t('eyebrow_reports')}
+        title={t('page_title_reports')}
+        description={t('reports_page_description')}
+      />
+
+      <div className="stat-grid">
+        {canSeeBranchAndDaily ? (
+          <>
+            <StatCard
+              icon={<IconTrendUp />}
+              label={t('label_earned')}
+              value={totalEarned.toLocaleString()}
+              sub={t('sub_som_total')}
+              trend={earnedTrend ?? undefined}
+            />
+            <StatCard
+              icon={<IconTrendDown />}
+              label={t('label_spent')}
+              value={totalSpent.toLocaleString()}
+              tone="warning"
+              sub={t('sub_som_total')}
+              trend={spentTrend ?? undefined}
+            />
+            <StatCard
+              icon={<IconScale />}
+              label={t('label_outstanding')}
+              value={totalOutstanding.toLocaleString()}
+              tone="success"
+              sub={t('sub_som')}
+            />
+            <StatCard
+              icon={<IconUsers />}
+              label={t('reports_stat_flagged')}
+              value={flaggedTotal}
+              tone={flaggedTotal > 0 ? 'warning' : 'primary'}
+              sub={t('reports_stat_flagged_sub')}
+            />
+          </>
+        ) : (
+          <>
+            <StatCard icon={<IconUsers />} label={t('reports_stat_seller_count')} value={sellerCount} />
+            <StatCard icon={<IconReceipt />} label={t('reports_stat_total_txns')} value={totalTxns.toLocaleString()} tone="teal" />
+            <StatCard
+              icon={<IconScale />}
+              label={t('reports_stat_avg_check')}
+              value={Math.round(blendedAvgCheck).toLocaleString()}
+              sub={t('sub_som')}
+            />
+            <StatCard
+              icon={<IconAlertCircle />}
+              label={t('reports_stat_flagged')}
+              value={flaggedTotal}
+              tone={flaggedTotal > 0 ? 'warning' : 'primary'}
+              sub={t('reports_stat_flagged_sub')}
+            />
+          </>
+        )}
+      </div>
 
       <div className="section-head" style={{ marginTop: 0 }}>
         <div>
@@ -227,98 +299,63 @@ export default function ReportsPage() {
           <p>{t('reports_sellers_description')}</p>
         </div>
       </div>
-      <div className="table-card">
-        {sellers!.length === 0 ? (
-          <EmptyState icon={<IconClipboardEmpty />} title={t('empty_no_transactions_yet')} />
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('th_seller')}</th>
-                  <th>{t('th_transactions')}</th>
-                  <th>{t('th_average_check')}</th>
-                  <th>{t('th_flagged')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sellers!.map((row) => {
-                  const isExpandable = row.seller_id !== null
-                  const isExpanded = isExpandable && expandedSellerId === row.seller_id
-                  return (
-                    <Fragment key={row.seller_id ?? row.seller_name}>
-                      <tr
-                        className={isExpandable ? 'clickable' : undefined}
-                        onClick={
-                          isExpandable
-                            ? () => setExpandedSellerId(isExpanded ? null : row.seller_id)
-                            : undefined
-                        }
-                      >
-                        <td>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            {isExpandable && (
-                              <IconChevronDown className={`row-chevron${isExpanded ? ' expanded' : ''}`} />
-                            )}
-                            {row.seller_name}
-                          </span>
-                        </td>
-                        <td className="num">{row.txn_count}</td>
-                        <td className="num">{row.avg_check.toLocaleString()}</td>
-                        <td className="num">{row.flagged_count}</td>
-                      </tr>
-                      {isExpanded && (
-                        <tr className="expanded-row">
-                          <td colSpan={4}>
-                            <SellerHistoryPanel sellerId={row.seller_id!} />
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+
+      {rankedSellers.length === 0 ? (
+        <EmptyState icon={<IconClipboardEmpty />} title={t('empty_no_transactions_yet')} />
+      ) : (
+        <div className="perf-list">
+          {rankedSellers.map((row, i) => {
+            const isExpandable = row.seller_id !== null
+            const isExpanded = isExpandable && expandedSellerId === row.seller_id
+            return (
+              <SellerPerformanceCard
+                key={row.seller_id ?? row.seller_name}
+                rank={i + 1}
+                name={row.seller_name}
+                txnCount={row.txn_count}
+                avgCheck={row.avg_check}
+                flaggedCount={row.flagged_count}
+                activityRatio={row.txn_count / maxTxnCount}
+                labels={{ transactions: t('th_transactions'), avgCheck: t('th_average_check'), flagged: t('th_flagged') }}
+                expandable={isExpandable}
+                expanded={!!isExpanded}
+                onToggle={() => setExpandedSellerId(isExpanded ? null : row.seller_id)}
+              >
+                {isExpandable && <SellerHistoryPanel sellerId={row.seller_id!} />}
+              </SellerPerformanceCard>
+            )
+          })}
+        </div>
+      )}
 
       {canSeeBranchAndDaily && (
         <>
           <div className="section-head">
-            <h2>{t('reports_branches_heading')}</h2>
+            <h2>{t('reports_branch_performance_heading')}</h2>
           </div>
-          <div className="table-card">
-            {branches!.length === 0 ? (
-              <EmptyState icon={<IconClipboardEmpty />} title={t('empty_no_transactions_yet')} />
-            ) : (
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t('th_branch')}</th>
-                      <th>{t('label_earned')}</th>
-                      <th>{t('label_spent')}</th>
-                      <th>{t('label_outstanding')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {branches!.map((row) => (
-                      <tr key={row.branch_id ?? row.branch_name}>
-                        <td>{row.branch_name}</td>
-                        <td className="num">{row.total_earned.toLocaleString()}</td>
-                        <td className="num">{row.total_spent.toLocaleString()}</td>
-                        <td className="num">{row.outstanding.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          {branches!.length === 0 ? (
+            <EmptyState icon={<IconClipboardEmpty />} title={t('empty_no_transactions_yet')} />
+          ) : (
+            <div className="perf-grid">
+              {branches!.map((row) => (
+                <BranchPerformanceCard
+                  key={row.branch_id ?? row.branch_name}
+                  name={row.branch_name}
+                  earned={row.total_earned}
+                  spent={row.total_spent}
+                  outstanding={row.outstanding}
+                  labels={{ earned: t('label_earned'), spent: t('label_spent'), outstanding: t('label_outstanding') }}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="section-head">
-            <h2>{t('last_30_days')}</h2>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              {t('reports_trend_heading')}
+              {earnedTrend && <TrendBadge direction={earnedTrend.direction} text={`${t('label_earned')} ${earnedTrend.text}`} />}
+            </h2>
+            <p>{t('last_30_days')}</p>
           </div>
           <div className="chart-card">
             <DualBarChart

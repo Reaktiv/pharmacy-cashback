@@ -8,7 +8,9 @@ import EmptyState from '../components/EmptyState'
 import { SkeletonTable } from '../components/Skeleton'
 import ConfirmDialog, { DoubleConfirmDialog } from '../components/ConfirmDialog'
 import DetailDrawer, { DrawerField } from '../components/DetailDrawer'
+import ActiveToggle from '../components/ActiveToggle'
 import SellersList from '../components/SellersList'
+import PageHeader from '../components/PageHeader'
 import { IconAlertCircle, IconBuilding, IconUsers, IconClipboardEmpty, IconTrash } from '../components/Icons'
 
 function asArray<T>(data: T[] | { results: T[] }): T[] {
@@ -59,40 +61,34 @@ function BranchesSection({ branchLimit }: { branchLimit: number | null }) {
           limit: branchLimit === null ? '∞' : branchLimit,
         })}
       </p>
-      <div className="table-card">
-        {branches.length === 0 ? (
+      {branches.length === 0 ? (
+        <div className="table-card">
           <EmptyState
             icon={<IconClipboardEmpty />}
             title={t('tenant_admin_branches_empty_title')}
             subtitle={t('tenant_admin_branches_empty_subtitle')}
           />
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('th_name')}</th>
-                  <th>{t('field_address')}</th>
-                  <th>{t('status_label')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {branches.map((b) => (
-                  <tr key={b.id} className="clickable" onClick={() => setSelected(b)}>
-                    <td>{b.name}</td>
-                    <td className="wrap">{b.address}</td>
-                    <td>
-                      <span className={`status-badge ${b.is_active ? 'active' : 'inactive'}`}>
-                        {activeStatusLabel(language, b.is_active ? 'active' : 'inactive')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="entity-list">
+          {branches.map((b) => (
+            <div key={b.id} className="entity-row" onClick={() => setSelected(b)}>
+              <span className="entity-icon">
+                <IconBuilding />
+              </span>
+              <div className="entity-main">
+                <div className="entity-title">{b.name}</div>
+                {b.address && <div className="entity-sub">{b.address}</div>}
+              </div>
+              <span className="entity-side">
+                <span className={`status-badge ${b.is_active ? 'active' : 'inactive'}`}>
+                  {activeStatusLabel(language, b.is_active ? 'active' : 'inactive')}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <DetailDrawer
         open={!!selected}
@@ -125,6 +121,14 @@ function BranchesSection({ branchLimit }: { branchLimit: number | null }) {
                   {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
                 </span>
               }
+            />
+            <ActiveToggle<Branch>
+              endpoint={`/api/branches/${selected.id}/`}
+              isActive={selected.is_active}
+              onSaved={(updated) => {
+                setSelected(updated)
+                setBranches((prev) => prev?.map((b) => (b.id === updated.id ? updated : b)) ?? prev)
+              }}
             />
           </>
         )}
@@ -197,36 +201,30 @@ function BranchManagersSection() {
 
   return (
     <div>
-      <div className="table-card">
-        {managers.length === 0 ? (
+      {managers.length === 0 ? (
+        <div className="table-card">
           <EmptyState icon={<IconUsers />} title={t('tenant_admin_managers_empty_title')} />
-        ) : (
-          <div className="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('th_login')}</th>
-                  <th>{t('field_branch')}</th>
-                  <th>{t('status_label')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {managers.map((m) => (
-                  <tr key={m.id} className="clickable" onClick={() => setSelected(m)}>
-                    <td>{m.username}</td>
-                    <td>{m.branch_name}</td>
-                    <td>
-                      <span className={`status-badge ${m.is_active ? 'active' : 'inactive'}`}>
-                        {activeStatusLabel(language, m.is_active ? 'active' : 'inactive')}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="entity-list">
+          {managers.map((m) => (
+            <div key={m.id} className="entity-row" onClick={() => setSelected(m)}>
+              <span className="entity-icon">
+                <IconUsers />
+              </span>
+              <div className="entity-main">
+                <div className="entity-title">{m.username}</div>
+                <div className="entity-sub">{m.branch_name}</div>
+              </div>
+              <span className="entity-side">
+                <span className={`status-badge ${m.is_active ? 'active' : 'inactive'}`}>
+                  {activeStatusLabel(language, m.is_active ? 'active' : 'inactive')}
+                </span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <DetailDrawer
         open={!!selected}
@@ -313,8 +311,7 @@ export default function TenantAdminPage() {
 
   return (
     <div>
-      <span className="eyebrow">{t('eyebrow_tenant')}</span>
-      <h2 style={{ marginBottom: '1.5rem' }}>{tenant.name}</h2>
+      <PageHeader eyebrow={t('eyebrow_tenant')} title={tenant.name} />
 
       <div className="section-head" style={{ marginTop: 0 }}>
         <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

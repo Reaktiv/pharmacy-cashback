@@ -33,6 +33,11 @@ class UserProfile(models.Model):
         BRANCH_MANAGER = "branch_manager", "Branch Manager"
         SELLER = "seller", "Seller"
 
+    class Language(models.TextChoices):
+        UZ = "uz", "O'zbekcha"
+        EN = "en", "English"
+        RU = "ru", "Русский"
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile"
     )
@@ -57,6 +62,12 @@ class UserProfile(models.Model):
     full_name = models.CharField(max_length=255, blank=True, default="")
     phone = models.CharField(max_length=20, blank=True, default="")
     avatar = models.FileField(upload_to=avatar_upload_path, null=True, blank=True)
+    # Single source of truth for this user's UI language, shared by the React
+    # admin panel and the session-rendered seller-web till pages (apps.
+    # seller_web.i18n.get_language) — previously each surface tracked its own
+    # (localStorage vs. a cookie) with no link between them, so changing one
+    # silently left the other stale.
+    language = models.CharField(max_length=2, choices=Language.choices, default=Language.UZ)
 
     def clean(self):
         super().clean()

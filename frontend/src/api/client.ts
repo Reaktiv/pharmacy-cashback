@@ -31,6 +31,20 @@ export function clearTokens(): void {
   sessionStorage.removeItem(REFRESH_KEY)
 }
 
+// This module is plain JS, not a hook/component — it has no way to call
+// setUser(null) or queryClient.clear() directly when a refresh token turns
+// out to be dead. AuthProvider listens for this on `window` and runs the
+// same logout() it uses for the button, so a silently-expired session ends
+// up in the identical state as an explicit one (ProtectedRoute redirect,
+// cache cleared) instead of leaving `user` stuck truthy while every
+// request 401s — see AuthContext.tsx for the listener.
+export const SESSION_EXPIRED_EVENT = 'pharmacy-cashback:session-expired'
+
+function endSession(): void {
+  clearTokens()
+  window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
+}
+
 export class ApiError extends Error {
   status: number
   data: unknown
@@ -48,7 +62,10 @@ export class ApiError extends Error {
 
 async function refreshAccessToken(): Promise<string> {
   const refresh = getRefreshToken()
-  if (!refresh) throw new ApiError(401, { detail: translate(getStoredLanguage(), 'api_not_logged_in') })
+  if (!refresh) {
+    endSession()
+    throw new ApiError(401, { detail: translate(getStoredLanguage(), 'api_not_logged_in') })
+  }
 
   const response = await fetch('/api/auth/token/refresh/', {
     method: 'POST',
@@ -56,7 +73,7 @@ async function refreshAccessToken(): Promise<string> {
     body: JSON.stringify({ refresh }),
   })
   if (!response.ok) {
-    clearTokens()
+    endSession()
     throw new ApiError(response.status, await response.json().catch(() => ({})))
   }
   const data = (await response.json()) as { access: string }

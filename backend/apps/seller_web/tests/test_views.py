@@ -1,11 +1,18 @@
+import base64
 from decimal import Decimal
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.models import UserProfile
 from apps.customers.models import OTP
 from apps.ledger.models import Transaction
 from apps.ledger.services import get_balance, post_earn_transaction
+
+TINY_PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 
 @pytest.mark.django_db
@@ -44,11 +51,15 @@ def test_seller_sees_the_register_page(client, make_tenant, make_branch, make_se
 def test_register_page_renders_in_the_chosen_language(
     client, make_tenant, make_branch, make_seller
 ):
+    """UserProfile.language is the source of truth for a logged-in user
+    (shared with the React panel's profile drawer) — the seller_lang cookie
+    only matters pre-login, see apps.seller_web.i18n.get_language."""
     tenant = make_tenant("t")
     branch = make_branch(tenant)
     seller = make_seller(tenant, branch)
+    seller.user.profile.language = "ru"
+    seller.user.profile.save(update_fields=["language"])
     client.login(username=seller.user.username, password="pass1234")
-    client.cookies["seller_lang"] = "ru"
 
     response = client.get("/seller/")
 
@@ -60,11 +71,38 @@ def test_register_page_renders_in_the_chosen_language(
 
 
 @pytest.mark.django_db
+def test_changing_language_via_the_me_api_changes_the_till_page_too(
+    client, api_client_for, make_tenant, make_branch, make_seller
+):
+    """Reproduces the reported bug: a seller switches language from the
+    React admin panel's profile drawer (PATCH /api/me/, see
+    apps.accounts.serializers.MeSerializer) and expects their seller-web
+    till page to follow — the two must read the same UserProfile.language
+    field, not independent per-surface state (a cookie here vs.
+    localStorage there)."""
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+
+    api_client = api_client_for(seller.user)
+    api_response = api_client.patch("/api/me/", {"language": "en"}, format="json")
+    assert api_response.status_code == 200
+
+    client.login(username=seller.user.username, password="pass1234")
+    response = client.get("/seller/")
+
+    assert response.status_code == 200
+    assert b"Redeem points" in response.content
+    assert b"Ballarni ishlatish" not in response.content
+
+
+@pytest.mark.django_db
 def test_forbidden_page_renders_in_the_chosen_language(client, make_tenant, make_user):
     tenant = make_tenant("t")
-    make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant, username="admin1")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant, username="admin1")
+    admin.profile.language = "en"
+    admin.profile.save(update_fields=["language"])
     client.login(username="admin1", password="pass1234")
-    client.cookies["seller_lang"] = "en"
 
     response = client.get("/seller/")
 
@@ -139,9 +177,10 @@ def test_earn_success_message_is_localized(
     tenant = make_tenant("t", rate=Decimal("10.00"))
     branch = make_branch(tenant)
     seller = make_seller(tenant, branch)
+    seller.user.profile.language = "en"
+    seller.user.profile.save(update_fields=["language"])
     make_customer(tenant, phone="+998900000001")
     client.login(username=seller.user.username, password="pass1234")
-    client.cookies["seller_lang"] = "en"
 
     response = client.post(
         "/seller/earn/",
@@ -366,3 +405,32 @@ def test_redeem_with_invalid_otp_shows_an_error_and_posts_nothing(
 
     assert response.status_code == 200
     assert Transaction.objects.all_tenants().filter(tenant=tenant).count() == 0
+
+
+@pytest.mark.django_db
+def test_seller_can_fetch_tenant_logo_once_tenant_admin_uploads_one(
+    client, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t")
+    logo = SimpleUploadedFile("logo.png", TINY_PNG_BYTES, content_type="image/png")
+    tenant.logo = logo
+    tenant.save(update_fields=["logo"])
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    client.login(username=seller.user.username, password="pass1234")
+
+    response = client.get("/seller/tenant-logo/")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_seller_tenant_logo_404s_when_tenant_has_no_logo(
+    client, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t")
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    client.login(username=seller.user.username, password="pass1234")
+
+    assert client.get("/seller/tenant-logo/").status_code == 404

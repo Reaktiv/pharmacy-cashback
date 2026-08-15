@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 
 from apps.tenants.context import get_current_tenant, tenant_check_bypassed
@@ -166,6 +167,34 @@ class Tenant(models.Model):
         "broadcast_quota). Null = unlimited.",
     )
     logo = models.FileField(upload_to=tenant_logo_upload_path, null=True, blank=True)
+    # Bot-only feature: a customer photographs their fiscal receipt's QR
+    # code and the bot reads the sale total off ofd.soliq.uz and credits
+    # cashback automatically. receipt_tin is this tenant's own STIR/INN (as
+    # printed on every receipt from their registered cash register) — a
+    # scanned receipt is only accepted when its `tin` matches this, so a
+    # receipt from an unrelated business can never be used to claim
+    # cashback here. receipt_branch is which of this tenant's branches
+    # those bot-sourced earn transactions get attributed to (Transaction.
+    # branch is a required FK — see apps/ledger/models.py — so there must
+    # be a real Branch to attach to). Both blank = the feature is off for
+    # this tenant.
+    receipt_tin = models.CharField(
+        max_length=9,
+        blank=True,
+        default="",
+        validators=[RegexValidator(r"^\d{9}$", "STIR 9 ta raqamdan iborat bo'lishi kerak.")],
+        help_text="Bu dorixonaning STIR raqami — QR-chek orqali cashback "
+        "faqat shu STIR'ga tegishli cheklar uchun ishlaydi. Bo'sh bo'lsa, "
+        "botda QR-chek funksiyasi o'chirilgan.",
+    )
+    receipt_branch = models.ForeignKey(
+        "accounts.Branch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="QR-chek orqali kelgan cashback shu filialga yoziladi.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):

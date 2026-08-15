@@ -19,6 +19,83 @@ from apps.tenants.models import Bot as BotRow
 
 logger = logging.getLogger(__name__)
 
+# Matches apps/bot/qr.py's is_trusted_check_url pattern — check_url is
+# already validated as an ofd.soliq.uz /check URL before this is ever
+# called (apps.bot.services.handle_receipt_photo), but the response
+# listener below still only reacts to the one endpoint it's looking for.
+_RECEIPT_API_PATH = "/api/payment"
+
+
+async def _fetch_receipt_via_playwright(check_url: str) -> dict | None:
+    """Reads a fiscal receipt's sale totals off ofd.soliq.uz.
+
+    The check page's own JS signs its call to new-ofd.soliq.uz/api/payment
+    with an x-signature/x-timestamp header computed client-side — a plain
+    HTTP request to that endpoint without it is rejected (verified: 400).
+    Reproducing that signature would mean reverse-engineering their
+    anti-abuse protection, which this deliberately avoids; instead a real
+    (headless) browser loads the actual page and lets *it* make the
+    signed request, and this just listens for the JSON response that
+    request gets back — the same thing a real customer's browser does.
+
+    Returns only the fields apps.bot.services.handle_receipt_photo needs
+    (None if the page never returned a usable payment payload, e.g. a
+    malformed/expired check URL, or the fetch timed out/errored)."""
+    from playwright.async_api import async_playwright
+
+    payload: dict | None = None
+
+    async def _capture_response(response):
+        nonlocal payload
+        if _RECEIPT_API_PATH not in response.url:
+            return
+        if "application/json" not in response.headers.get("content-type", ""):
+            return
+        try:
+            payload = await response.json()
+        except Exception:
+            return
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                context = await browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    )
+                )
+                page = await context.new_page()
+                page.on("response", _capture_response)
+                await page.goto(check_url, wait_until="networkidle", timeout=15000)
+                # The page's own JS fires the signed API call asynchronously
+                # after load — wait_until="networkidle" alone occasionally
+                # races ahead of it, same margin experiment.py's manual
+                # testing needed.
+                await page.wait_for_timeout(1500)
+            finally:
+                await browser.close()
+    except Exception:
+        # Best-effort, same "log and don't propagate" posture as every
+        # other external-call task in this module — a flaky/unreachable
+        # ofd.soliq.uz must not crash the Celery task, just fail this scan.
+        logger.exception("Failed to fetch receipt data from %s", check_url)
+        return None
+
+    if payload is None or not payload.get("success"):
+        return None
+    data = payload.get("data") or {}
+    if not data:
+        return None
+    return {
+        "tin": data.get("tin"),
+        "cash_total": data.get("cashTotal"),
+        "card_total": data.get("cardTotal"),
+        "terminal_id": data.get("terminalId"),
+        "payment_no": data.get("paymentNo"),
+    }
+
 
 def _report_keyboard(transaction_id: int, language: str):
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -166,3 +243,63 @@ def sync_bot_display_name(bot_id: int, new_name: str) -> None:
     only BotFather can change) so customers see the pharmacy's current name
     in the chat, not whatever it was called when the bot was first added."""
     _sync_bot_display_name_sync(bot_id, new_name)
+
+
+def _process_receipt_photo_sync(
+    *, tenant_id: int, customer_id: int, chat_id: int, bot_id: int, check_url: str
+) -> None:
+    from apps.bot.qr import is_trusted_check_url
+    from apps.bot.services import handle_receipt_check_data
+    from apps.customers.models import Customer
+    from apps.tenants.models import Tenant
+
+    tenant = Tenant.objects.get(pk=tenant_id)
+    customer = Customer.objects.all_tenants().get(pk=customer_id, tenant_id=tenant_id)
+    bot_row = BotRow.objects.all_tenants().filter(pk=bot_id, is_active=True).first()
+    if bot_row is None or not bot_row.token_encrypted:
+        return
+
+    # Re-checked here (defense in depth) — apps.bot.handlers.on_receipt_photo
+    # already validates this before ever queuing the task, but check_url is
+    # a plain string argument, not a type the task itself can trust blindly.
+    if not is_trusted_check_url(check_url):
+        return
+
+    check_data = asyncio.run(_fetch_receipt_via_playwright(check_url))
+    if check_data is None:
+        from apps.bot.i18n import t
+
+        message = t(customer.language, "receipt_fetch_failed")
+    else:
+        message = handle_receipt_check_data(tenant=tenant, customer=customer, check_data=check_data)
+
+    if message is None:
+        # Success — post_earn_transaction's on_commit hook already fired
+        # the usual notify_transaction task, so there's nothing left to say.
+        return
+
+    async def _send():
+        async with build_client(bot_row) as bot:
+            await bot.send_message(chat_id, message)
+
+    asyncio.run(_send())
+
+
+@shared_task
+def process_receipt_photo(
+    *, tenant_id: int, customer_id: int, chat_id: int, bot_id: int, check_url: str
+) -> None:
+    """Bot-only QR-receipt cashback flow (apps/bot/qr.py,
+    apps/bot/services.py::handle_receipt_check_data): fired from
+    apps.bot.handlers.on_receipt_photo after a customer sends a photo whose
+    QR decodes to a trusted ofd.soliq.uz check URL. Runs in the worker, not
+    the webhook handler, because reading the receipt needs a real
+    headless-browser page load (a few seconds) — the customer already got
+    an immediate "tekshirilmoqda" ack before this was queued."""
+    _process_receipt_photo_sync(
+        tenant_id=tenant_id,
+        customer_id=customer_id,
+        chat_id=chat_id,
+        bot_id=bot_id,
+        check_url=check_url,
+    )

@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { apiFetch, apiFetchObjectUrl } from '../api/client'
 import type { MeProfile } from '../api/types'
-import { roleLabel } from '../lib/labels'
 import { useLanguage, type StringKey } from '../lib/i18n'
-import Brand from './Logo'
 import ConfirmDialog from './ConfirmDialog'
 import ProfileDrawer from './ProfileDrawer'
 import {
@@ -17,8 +16,8 @@ import {
   IconLogout,
   IconMenu,
   IconX,
-  IconUser,
   IconSettings,
+  IconUser,
 } from './Icons'
 import type { ReactNode } from 'react'
 
@@ -55,11 +54,16 @@ const PAGE_TITLES: { test: (path: string) => boolean; titleKey: StringKey }[] = 
 const MOBILE_BREAKPOINT_QUERY = '(max-width: 680px)'
 
 /** Passed to every nested route page via <Outlet context={...}/> — lets a
- * page like TenantAdminPage (which edits Tenant.name/logo) tell the
- * sidebar/topbar brand to refetch after a save, without a full reload. */
+ * page like TenantSettingsPage (which edits Tenant.name/logo) tell the
+ * layout to refetch the ['me'] query after a save, without a full reload. */
 export interface LayoutOutletContext {
   refreshBranding: () => void
 }
+
+/** The one place /api/me/ is fetched — every page reads it from this same
+ * cache entry (staleTime set globally in main.tsx) instead of each doing
+ * its own fetch. */
+const ME_QUERY_KEY = ['me'] as const
 
 function initials(name: string): string {
   return name.slice(0, 2).toUpperCase()
@@ -67,21 +71,31 @@ function initials(name: string): string {
 
 export default function Layout() {
   const { user, logout } = useAuth()
-  const { t, language } = useLanguage()
+  const { t, language, setLanguage } = useLanguage()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const links = (user?.role && NAV_BY_ROLE[user.role]) || []
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [meProfile, setMeProfile] = useState<MeProfile | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const avatarUrlRef = useRef<string | null>(null)
-  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null)
-  const brandLogoUrlRef = useRef<string | null>(null)
   // Open by default on desktop, closed by default on phone-sized screens —
   // same hamburger-toggled menu either way, just a different starting state.
   const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches)
   const pageTitleKey = PAGE_TITLES.find((entry) => entry.test(location.pathname))?.titleKey
   const pageTitle = pageTitleKey ? t(pageTitleKey) : t('page_title_fallback')
+
+  // The TanStack Query pilot (see main.tsx for the QueryClient's global
+  // defaults): fetches once, cached under ['me'] for staleTime, refetched
+  // on demand via `refetch` — replaces the old useEffect+apiFetch here.
+  // Failures are swallowed (matching the old `.catch(() => {})`): a failed
+  // /api/me/ just leaves the sidebar showing its '—' fallbacks, nothing
+  // else in the shell depends on it hard enough to warrant an error state.
+  const meQuery = useQuery({
+    queryKey: ME_QUERY_KEY,
+    queryFn: () => apiFetch<MeProfile>('/api/me/'),
+  })
+  const meProfile = meQuery.data ?? null
 
   const setAvatar = (url: string | null) => {
     if (avatarUrlRef.current) URL.revokeObjectURL(avatarUrlRef.current)
@@ -89,44 +103,39 @@ export default function Layout() {
     setAvatarUrl(url)
   }
 
-  const setBrandLogo = (url: string | null) => {
-    if (brandLogoUrlRef.current) URL.revokeObjectURL(brandLogoUrlRef.current)
-    brandLogoUrlRef.current = url
-    setBrandLogoUrl(url)
-  }
-
-  // Re-fetchable on demand (not just on mount) — a tenant_admin renaming
-  // their pharmacy or uploading a logo happens on a nested route page
-  // (TenantAdminPage), which reaches this via useOutletContext() below to
-  // refresh the sidebar/topbar brand without a full reload.
-  const loadMe = useCallback(() => {
-    apiFetch<MeProfile>('/api/me/')
-      .then((data) => {
-        setMeProfile(data)
-        if (data.has_avatar) {
-          apiFetchObjectUrl('/api/me/avatar/').then(setAvatar).catch(() => setAvatar(null))
-        } else {
-          setAvatar(null)
-        }
-        if (data.role === 'superadmin' && data.platform_has_logo) {
-          apiFetchObjectUrl('/api/branding/logo/').then(setBrandLogo).catch(() => setBrandLogo(null))
-        } else if (data.role !== 'superadmin' && data.tenant_has_logo) {
-          apiFetchObjectUrl('/api/me/tenant-logo/').then(setBrandLogo).catch(() => setBrandLogo(null))
-        } else {
-          setBrandLogo(null)
-        }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
+  // Account-level language wins over whatever this browser's localStorage
+  // had (e.g. a fresh browser, or a change made from the profile drawer on
+  // another device) — see ProfileDrawer's handleLanguageChange, which is
+  // the only writer of this field. Deliberately keyed off meProfile.language
+  // only, not the local `language` it compares against — including it would
+  // re-run this effect right after the setLanguage call below.
   useEffect(() => {
-    loadMe()
-    return () => {
-      if (avatarUrlRef.current) URL.revokeObjectURL(avatarUrlRef.current)
-      if (brandLogoUrlRef.current) URL.revokeObjectURL(brandLogoUrlRef.current)
+    if (meProfile?.language && meProfile.language !== language) {
+      setLanguage(meProfile.language)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meProfile?.language])
+
+  // Fetches the avatar blob whenever has_avatar flips — including right
+  // after ProfileDrawer's optimistic cache write (see onSaved below). That
+  // write already sets `avatarUrl` itself from the freshly-uploaded File,
+  // so on a false→true transition this ends up re-fetching the same image
+  // once more than strictly necessary; harmless, and simpler than teaching
+  // this effect to tell "real fetch" and "optimistic write" apart.
+  useEffect(() => {
+    if (!meProfile) return
+    if (meProfile.has_avatar) {
+      apiFetchObjectUrl('/api/me/avatar/').then(setAvatar).catch(() => setAvatar(null))
+    } else {
+      setAvatar(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meProfile?.has_avatar])
+
+  useEffect(() => {
+    return () => {
+      if (avatarUrlRef.current) URL.revokeObjectURL(avatarUrlRef.current)
+    }
   }, [])
 
   // A nav click while the menu is showing as an off-canvas drawer (phone)
@@ -136,31 +145,12 @@ export default function Layout() {
   }
 
   const displayName = meProfile?.full_name || user?.username || ''
-  // Every role except superadmin sees their own pharmacy's identity instead
-  // of the product's own brand — superadmin is the only account the
-  // "Pharmacy Cashback" name/logo itself still belongs to (see
-  // MeSerializer.platform_name).
-  const brandName =
-    (meProfile?.role === 'superadmin' ? meProfile.platform_name : meProfile?.tenant_name) ||
-    'Pharmacy Cashback'
 
   return (
     <div className="app-shell">
       {menuOpen && <div className="sidebar-backdrop" onClick={() => setMenuOpen(false)} />}
 
       <aside className={`sidebar${menuOpen ? ' open' : ' closed'}`}>
-        <div className="sidebar-brand">
-          <Brand name={brandName} logoUrl={brandLogoUrl} />
-        </div>
-
-        <div className="sidebar-profile-card">
-          <span className={`sidebar-profile-avatar${avatarUrl ? ' has-image' : ''}`}>
-            {avatarUrl ? <img src={avatarUrl} alt="" /> : displayName ? initials(displayName) : '—'}
-          </span>
-          <div className="sidebar-profile-name">{displayName || '—'}</div>
-          <div className="sidebar-profile-role">{meProfile ? roleLabel(language, meProfile.role) : '—'}</div>
-        </div>
-
         <nav className="sidebar-nav">
           <div className="nav-group-label">{t('nav_group_label')}</div>
           {links.map((link) => (
@@ -177,18 +167,18 @@ export default function Layout() {
           ))}
         </nav>
 
-        <button type="button" className="ghost sm sidebar-profile-btn" onClick={() => setProfileOpen(true)}>
-          <IconUser />
-          {t('profile_link_label')}
-        </button>
-        <button
-          type="button"
-          className="ghost sm danger sidebar-logout"
-          onClick={() => setLogoutOpen(true)}
-        >
-          <IconLogout />
-          {t('logout')}
-        </button>
+        <div className="sidebar-footer">
+          <button type="button" className="sidebar-profile-trigger" onClick={() => setProfileOpen(true)}>
+            <span className={`sidebar-profile-avatar${avatarUrl ? ' has-image' : ''}`}>
+              {avatarUrl ? <img src={avatarUrl} alt="" /> : displayName ? initials(displayName) : <IconUser />}
+            </span>
+            <span className="sidebar-profile-trigger-name">{t('profile_link_label')}</span>
+          </button>
+          <button type="button" className="sidebar-logout" onClick={() => setLogoutOpen(true)}>
+            <IconLogout />
+            {t('logout')}
+          </button>
+        </div>
       </aside>
 
       <div className="app-main">
@@ -203,11 +193,11 @@ export default function Layout() {
             >
               {menuOpen ? <IconX /> : <IconMenu />}
             </button>
-            <h1>{pageTitle}</h1>
+            <span className="app-topbar-title">{pageTitle}</span>
           </div>
         </header>
         <main className="app-content">
-          <Outlet context={{ refreshBranding: loadMe }} />
+          <Outlet context={{ refreshBranding: () => meQuery.refetch() }} />
         </main>
       </div>
 
@@ -216,17 +206,12 @@ export default function Layout() {
         onClose={() => setProfileOpen(false)}
         profile={meProfile}
         avatarUrl={avatarUrl}
-        onSaved={(updated, avatarFile, removedAvatar, platformLogoFile, removedPlatformLogo) => {
-          setMeProfile(updated)
+        onSaved={(updated, avatarFile, removedAvatar) => {
+          // Already have the fresh server response from the PATCH — write
+          // it straight into the cache instead of paying for a refetch.
+          queryClient.setQueryData(ME_QUERY_KEY, updated)
           if (avatarFile) setAvatar(URL.createObjectURL(avatarFile))
           else if (removedAvatar) setAvatar(null)
-          // brandName re-derives from `updated` automatically on the next
-          // render (see the brandName const above) — only the logo image
-          // itself needs an explicit refresh here, same as avatar above.
-          if (updated.role === 'superadmin') {
-            if (platformLogoFile) setBrandLogo(URL.createObjectURL(platformLogoFile))
-            else if (removedPlatformLogo) setBrandLogo(null)
-          }
         }}
       />
 

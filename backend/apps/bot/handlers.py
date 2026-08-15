@@ -42,7 +42,9 @@ from apps.bot.i18n import (
     button_labels,
     t,
 )
+from apps.bot.qr import extract_url_from_photo, is_trusted_check_url
 from apps.bot.states import RedeemStates, SettingsStates
+from apps.bot.tasks import process_receipt_photo
 
 REGISTRATION_LANGUAGE_PREFIX = "reglang"
 SETTINGS_LANGUAGE_PREFIX = "setlang"
@@ -76,7 +78,11 @@ def _main_menu_keyboard(language: str) -> ReplyKeyboardMarkup:
                 KeyboardButton(text=t(language, "balance_button")),
                 KeyboardButton(text=t(language, "redeem_button")),
             ],
-            [KeyboardButton(text=t(language, "settings_button"))],
+            [KeyboardButton(text=t(language, "receipt_button"))],
+            [
+                KeyboardButton(text=t(language, "settings_button")),
+                KeyboardButton(text=t(language, "cancel_button")),
+            ],
         ],
         resize_keyboard=True,
     )
@@ -201,12 +207,85 @@ async def on_consent_accept(callback: CallbackQuery, tenant, bot_row, state: FSM
     await callback.answer()
 
 
+async def on_cancel(message: Message, tenant, bot_row, state: FSMContext) -> None:
+    """Clears whatever FSM state the customer is currently in (e.g.
+    RedeemStates.awaiting_amount, SettingsStates.awaiting_name) and returns
+    to the main menu — registered ahead of the state-filtered handlers in
+    register_handlers() so "Bekor qilish" always wins over whatever state
+    is active, regardless of which flow the customer was mid-way through."""
+    assert message.from_user is not None
+    language = await sync_to_async(bot_services.get_customer_language, thread_sensitive=True)(
+        tenant=tenant, telegram_id=message.from_user.id
+    )
+    await state.clear()
+    await message.answer(
+        t(language, "cancelled_message"), reply_markup=_main_menu_keyboard(language)
+    )
+
+
 async def on_balance(message: Message, tenant, bot_row) -> None:
     assert message.from_user is not None
     text = await sync_to_async(bot_services.handle_balance_query, thread_sensitive=True)(
         tenant=tenant, telegram_id=message.from_user.id
     )
     await message.answer(text)
+
+
+async def on_receipt_button(message: Message, tenant, bot_row) -> None:
+    assert message.from_user is not None
+    language = await sync_to_async(bot_services.get_customer_language, thread_sensitive=True)(
+        tenant=tenant, telegram_id=message.from_user.id
+    )
+    is_registered = await sync_to_async(
+        bot_services.customer_is_registered, thread_sensitive=True
+    )(tenant=tenant, telegram_id=message.from_user.id)
+    if not is_registered:
+        await message.answer(t(language, "not_registered"))
+        return
+    await message.answer(t(language, "receipt_ask_photo"))
+
+
+async def on_receipt_photo(message: Message, tenant, bot_row) -> None:
+    """A customer can send a receipt photo at any time, not just after
+    tapping the "Chek yuborish" button (on_receipt_button above is just a
+    discoverable prompt) — matches F.contact being a plain global handler
+    rather than gated behind a menu tap. Reads the QR code synchronously
+    (fast: local image decode, no network), then hands off to Celery
+    (apps.bot.tasks.process_receipt_photo) for the slow part — reading the
+    receipt off ofd.soliq.uz needs a real headless-browser page load."""
+    assert message.from_user is not None
+    assert message.photo is not None  # guaranteed by the F.photo filter this is registered under
+    assert message.bot is not None
+
+    language = await sync_to_async(bot_services.get_customer_language, thread_sensitive=True)(
+        tenant=tenant, telegram_id=message.from_user.id
+    )
+    customer = await sync_to_async(
+        bot_services.get_customer_by_telegram_id, thread_sensitive=True
+    )(tenant=tenant, telegram_id=message.from_user.id)
+    if customer is None:
+        await message.answer(t(language, "not_registered"))
+        return
+
+    buffer = await message.bot.download(message.photo[-1])
+    image_bytes = buffer.read()
+
+    check_url = await sync_to_async(extract_url_from_photo, thread_sensitive=True)(image_bytes)
+    if check_url is None:
+        await message.answer(t(language, "receipt_qr_not_found"))
+        return
+    if not is_trusted_check_url(check_url):
+        await message.answer(t(language, "receipt_untrusted_url"))
+        return
+
+    await message.answer(t(language, "receipt_processing"))
+    process_receipt_photo.delay(
+        tenant_id=tenant.id,
+        customer_id=customer.id,
+        chat_id=message.chat.id,
+        bot_id=bot_row.id,
+        check_url=check_url,
+    )
 
 
 async def on_redeem_start(message: Message, tenant, bot_row, state: FSMContext) -> None:
@@ -328,7 +407,14 @@ def register_handlers(router) -> None:
     )
     router.message.register(on_contact, F.contact)
     router.callback_query.register(on_consent_accept, F.data == "consent:accept")
+    # Registered before the state-filtered handlers below (RedeemStates/
+    # SettingsStates) so "Bekor qilish" always intercepts, no matter which
+    # flow the customer is mid-way through — aiogram checks filters in
+    # registration order and stops at the first match.
+    router.message.register(on_cancel, F.text.in_(button_labels("cancel_button")))
     router.message.register(on_balance, F.text.in_(button_labels("balance_button")))
+    router.message.register(on_receipt_button, F.text.in_(button_labels("receipt_button")))
+    router.message.register(on_receipt_photo, F.photo)
     router.message.register(on_redeem_start, F.text.in_(button_labels("redeem_button")))
     router.message.register(on_redeem_amount, RedeemStates.awaiting_amount)
     router.message.register(on_settings_start, F.text.in_(button_labels("settings_button")))
