@@ -42,7 +42,7 @@ from apps.bot.i18n import (
     button_labels,
     t,
 )
-from apps.bot.qr import extract_url_from_photo, is_trusted_check_url
+from apps.bot.qr import decode_receipt_qr, is_trusted_check_url
 from apps.bot.states import RedeemStates, SettingsStates
 from apps.bot.tasks import process_receipt_photo
 
@@ -245,16 +245,25 @@ async def on_receipt_button(message: Message, tenant, bot_row) -> None:
     await message.answer(t(language, "receipt_ask_photo"))
 
 
-async def on_receipt_photo(message: Message, tenant, bot_row) -> None:
-    """A customer can send a receipt photo at any time, not just after
-    tapping the "Chek yuborish" button (on_receipt_button above is just a
-    discoverable prompt) — matches F.contact being a plain global handler
-    rather than gated behind a menu tap. Reads the QR code synchronously
-    (fast: local image decode, no network), then hands off to Celery
-    (apps.bot.tasks.process_receipt_photo) for the slow part — reading the
-    receipt off ofd.soliq.uz needs a real headless-browser page load."""
+# Telegram recompresses anything sent as a "photo" down to ~1280px and
+# re-encodes it as JPEG, which is often exactly what destroys a receipt's
+# tiny QR modules. A "document" upload skips that pipeline entirely and
+# keeps the original file — RECEIPT_IMAGE_DOCUMENT_MIME_TYPES restricts
+# on_receipt_document to the raster formats decode_receipt_qr (PIL) can
+# actually open, so a customer sending some unrelated file (a PDF, a
+# .docx) is silently ignored rather than mistaken for a receipt.
+RECEIPT_IMAGE_DOCUMENT_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+
+async def _handle_receipt_image(message: Message, tenant, bot_row, file) -> None:
+    """Shared body for on_receipt_photo and on_receipt_document below — the
+    only difference between the two is which Telegram object carries the
+    file_id or download() to fetch bytes from. Reads the QR code
+    synchronously (fast: local image decode, no network), then hands off to
+    Celery (apps.bot.tasks.process_receipt_photo) for the slow part —
+    reading the receipt off ofd.soliq.uz needs a real headless-browser page
+    load."""
     assert message.from_user is not None
-    assert message.photo is not None  # guaranteed by the F.photo filter this is registered under
     assert message.bot is not None
 
     language = await sync_to_async(bot_services.get_customer_language, thread_sensitive=True)(
@@ -267,14 +276,14 @@ async def on_receipt_photo(message: Message, tenant, bot_row) -> None:
         await message.answer(t(language, "not_registered"))
         return
 
-    buffer = await message.bot.download(message.photo[-1])
+    buffer = await message.bot.download(file)
     image_bytes = buffer.read()
 
-    check_url = await sync_to_async(extract_url_from_photo, thread_sensitive=True)(image_bytes)
-    if check_url is None:
+    qr_result = await sync_to_async(decode_receipt_qr, thread_sensitive=True)(image_bytes)
+    if qr_result is None:
         await message.answer(t(language, "receipt_qr_not_found"))
         return
-    if not is_trusted_check_url(check_url):
+    if not is_trusted_check_url(qr_result.value):
         await message.answer(t(language, "receipt_untrusted_url"))
         return
 
@@ -284,8 +293,24 @@ async def on_receipt_photo(message: Message, tenant, bot_row) -> None:
         customer_id=customer.id,
         chat_id=message.chat.id,
         bot_id=bot_row.id,
-        check_url=check_url,
+        check_url=qr_result.value,
     )
+
+
+async def on_receipt_photo(message: Message, tenant, bot_row) -> None:
+    """A customer can send a receipt photo at any time, not just after
+    tapping the "Chek yuborish" button (on_receipt_button above is just a
+    discoverable prompt) — matches F.contact being a plain global handler
+    rather than gated behind a menu tap."""
+    assert message.photo is not None  # guaranteed by the F.photo filter this is registered under
+    await _handle_receipt_image(message, tenant, bot_row, message.photo[-1])
+
+
+async def on_receipt_document(message: Message, tenant, bot_row) -> None:
+    """Same flow as on_receipt_photo, but for a receipt sent as a file —
+    see RECEIPT_IMAGE_DOCUMENT_MIME_TYPES above for why this exists."""
+    assert message.document is not None  # guaranteed by this handler's own F.document filter
+    await _handle_receipt_image(message, tenant, bot_row, message.document)
 
 
 async def on_redeem_start(message: Message, tenant, bot_row, state: FSMContext) -> None:
@@ -415,6 +440,9 @@ def register_handlers(router) -> None:
     router.message.register(on_balance, F.text.in_(button_labels("balance_button")))
     router.message.register(on_receipt_button, F.text.in_(button_labels("receipt_button")))
     router.message.register(on_receipt_photo, F.photo)
+    router.message.register(
+        on_receipt_document, F.document.mime_type.in_(RECEIPT_IMAGE_DOCUMENT_MIME_TYPES)
+    )
     router.message.register(on_redeem_start, F.text.in_(button_labels("redeem_button")))
     router.message.register(on_redeem_amount, RedeemStates.awaiting_amount)
     router.message.register(on_settings_start, F.text.in_(button_labels("settings_button")))

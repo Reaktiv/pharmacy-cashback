@@ -223,9 +223,9 @@ _STRINGS: dict[str, dict[Language, str]] = {
         "ru": "🧾 Отправить чек",
     },
     "receipt_ask_photo": {
-        "uz": "Chekingizning QR kodi aniq ko'rinadigan suratini yuboring.",
-        "en": "Send a photo of your receipt with the QR code clearly visible.",
-        "ru": "Отправьте фото чека, на котором чётко виден QR-код.",
+        "uz": "Chekingizning QR kodi aniq ko'rinadigan suratini yuboring. Agar o'qilmasa — rasmni 📎 fayl sifatida yuboring (Telegram uni siqib, sifatini pasaytirmaydi).",
+        "en": "Send a photo of your receipt with the QR code clearly visible. If it doesn't read, send it as a 📎 file instead (Telegram won't compress it).",
+        "ru": "Отправьте фото чека, на котором чётко виден QR-код. Если не считается — отправьте фото как 📎 файл (Telegram его не сожмёт).",
     },
     "receipt_processing": {
         "uz": "⏳ Chek tekshirilmoqda...",
@@ -233,9 +233,9 @@ _STRINGS: dict[str, dict[Language, str]] = {
         "ru": "⏳ Проверяем ваш чек...",
     },
     "receipt_qr_not_found": {
-        "uz": "Rasmda QR kod topilmadi. Chekning QR kodi aniq ko'rinadigan qilib qayta suratga oling.",
-        "en": "No QR code found in the photo. Retake it so the receipt's QR code is clearly visible.",
-        "ru": "На фото не найден QR-код. Переснимите так, чтобы QR-код чека был чётко виден.",
+        "uz": "Rasmda QR kod topilmadi. Qayta suratga oling yoki rasmni 📎 fayl sifatida yuborib ko'ring — Telegram fotosuratlarni siqib, QR kodning mayda detallarini yo'qotib qo'yishi mumkin.",
+        "en": "No QR code found in the photo. Retake it, or try sending it as a 📎 file instead — Telegram compresses photos, which can destroy a QR code's fine detail.",
+        "ru": "На фото не найден QR-код. Переснимите или попробуйте отправить как 📎 файл — Telegram сжимает фото, из-за чего мелкие детали QR-кода могут теряться.",
     },
     "receipt_untrusted_url": {
         "uz": "Bu QR kod chek havolasi emas.",

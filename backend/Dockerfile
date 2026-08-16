@@ -5,9 +5,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# libzbar0 decodes the QR code on a customer's receipt photo (pyzbar).
+# zxing-cpp (decodes the QR code on a customer's receipt photo) ships its
+# own compiled decoder in the wheel — no system library needed for it,
+# unlike the pyzbar/libzbar0 it replaced.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev gcc libzbar0 \
+    && apt-get install -y --no-install-recommends libpq-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PIP_DEFAULT_TIMEOUT=100 \
