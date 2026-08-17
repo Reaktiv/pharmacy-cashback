@@ -127,6 +127,33 @@ def test_tenant_admin_can_fetch_their_own_media_file(api_client_for, make_user, 
 
 
 @pytest.mark.django_db
+def test_upload_with_a_path_traversal_filename_stays_inside_the_tenant_directory(
+    api_client_for, make_user, make_tenant
+):
+    """Pre-production gate review: broadcast_media_upload_path() (models.py)
+    builds the stored path from a random UUID plus only os.path.splitext()'s
+    extension of the client-supplied filename — never the filename itself.
+    Confirms an adversarial filename can't escape apps/broadcasts/<tenant_id>/
+    the way it could if the raw filename were ever used directly."""
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), color="white").save(buf, format="PNG")
+    traversal_file = SimpleUploadedFile(
+        "../../../../etc/cron.d/evil.png", buf.getvalue(), content_type="image/png"
+    )
+
+    response = client.post("/api/broadcast-media/", {"file": traversal_file}, format="multipart")
+
+    assert response.status_code == 201, response.data
+    media = BroadcastMedia.objects.all_tenants().get(pk=response.data["id"])
+    assert media.file.name.startswith(f"broadcast_media/{tenant.id}/")
+    assert ".." not in media.file.name
+    assert media.file.name.endswith(".png")
+
+
+@pytest.mark.django_db
 def test_upload_rejects_svg_disguised_as_an_image(api_client_for, make_user, make_tenant):
     """Regression test for audit finding H-1: an SVG (which can carry a
     <script> tag) with a client-declared image/* Content-Type used to pass

@@ -29,7 +29,8 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 BACKUP_DIR="${BACKUP_DIR:-/root/backups}"
 LOG_FILE="${LOG_FILE:-$BACKUP_DIR/backup.log}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
-TIMESTAMP="$(date +%Y-%m-%d-%H%M)"
+LOCK_FILE="${LOCK_FILE:-$BACKUP_DIR/.backup.lock}"
+TIMESTAMP="$(date +%Y-%m-%d-%H%M%S)"
 DEST="$BACKUP_DIR/backup-$TIMESTAMP.sql.gz"
 
 cd "$(dirname "$0")/.."
@@ -43,6 +44,36 @@ fail() {
     log "FAILED: $*"
     exit 1
 }
+
+# Concurrent-run guard: if a previous run is somehow still going (e.g. an
+# unusually large database made the last run overrun into this one's
+# scheduled start), don't let a second pg_dump start stacked on top of it —
+# `flock -n` fails fast instead of queuing, so cron's next scheduled
+# attempt just skips cleanly rather than piling up processes. Held for the
+# whole script (this fd stays open until the process exits), not just the
+# dump step, so retention pruning below can't race a concurrent run either.
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then
+    log "Another backup run is already in progress (lock: $LOCK_FILE) — skipping this run."
+    exit 0
+fi
+
+# Crash-safety, part 1: a graceful termination (SIGTERM — `docker compose
+# down`, systemd stopping the unit, a plain `kill`) still runs this trap,
+# so the common case cleans up after itself immediately.
+trap 'rm -f "$DEST.partial"' EXIT
+
+# Crash-safety, part 2: SIGKILL cannot be trapped by any process, ever —
+# that's what makes it SIGKILL — and it's specifically what the Linux OOM
+# killer sends. Part 1's trap does nothing in that case, so a `.partial`
+# from a run killed that way would sit in $BACKUP_DIR forever (retention
+# below only prunes the `backup-*.sql.gz` pattern, which `.partial` never
+# matches). Instead, sweep any `.partial` older than an hour at the start
+# of every run — no legitimate run of this script takes anywhere near that
+# long, so anything that old is unambiguously orphaned, not a concurrent
+# run in progress (that case is already handled by the flock above).
+find "$BACKUP_DIR" -maxdepth 1 -name '*.sql.gz.partial' -mmin +60 -print -delete \
+    | while read -r stale; do log "Swept stale partial (orphaned by a killed run): $stale"; done
 
 log "Starting backup -> $DEST"
 

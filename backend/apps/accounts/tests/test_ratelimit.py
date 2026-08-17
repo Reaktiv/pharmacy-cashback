@@ -1,4 +1,5 @@
 import threading
+import time
 
 import pytest
 
@@ -62,6 +63,32 @@ def test_reserve_rate_limit_slot_allows_under_the_limit():
 
 def test_release_rate_limit_slot_on_an_expired_or_missing_key_does_not_raise():
     release_rate_limit_slot(key="test:never-reserved")  # must not raise
+
+
+def test_a_reservation_never_released_is_bounded_by_its_own_ttl_not_permanent():
+    """Pre-production gate question: what happens if the process dies
+    between reserve_rate_limit_slot() and release_rate_limit_slot() (e.g. a
+    worker crash mid-request)? Answer, proven here: the reservation is a
+    plain cache increment with a TTL — an unreleased reservation behaves
+    exactly like a counted failure and expires with the window, same as
+    every other entry in this counter. It is a bounded, self-healing
+    degradation (the crashed request "counts" as a failure until the
+    window rolls over), never a stuck/permanent lock. A short window here
+    keeps the test fast; the real code path is identical to production's
+    60s/300s windows, just faster to observe expiring."""
+    key = "test:crash-before-release"
+    reserve_rate_limit_slot(key=key, limit=1, window_seconds=1)
+
+    # Simulates the crash: no release_rate_limit_slot() call. A second
+    # attempt right away is correctly throttled...
+    with pytest.raises(RateLimitExceededError):
+        reserve_rate_limit_slot(key=key, limit=1, window_seconds=1)
+
+    time.sleep(1.2)  # past the 1s window
+
+    # ...but once the window rolls over, the "leaked" reservation is gone
+    # on its own — nothing needed to reset it.
+    reserve_rate_limit_slot(key=key, limit=1, window_seconds=1)  # must not raise
 
 
 def test_reserve_rate_limit_slot_is_race_safe_under_concurrent_requests():

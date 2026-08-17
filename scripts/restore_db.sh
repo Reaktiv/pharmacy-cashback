@@ -46,7 +46,16 @@ EOF
 fi
 
 echo "Restoring $BACKUP_FILE into the '$COMPOSE_FILE' db service..." >&2
+# ON_ERROR_STOP=1 is not optional: psql's default behavior on a SQL error
+# mid-restore is to print it and keep going, exiting 0 at the end as if
+# nothing had gone wrong — verified directly against this exact codebase's
+# Postgres image during review (a syntax error left mid-script, then a
+# later CREATE TABLE that still ran, still exited 0 with ON_ERROR_STOP
+# unset). Without this flag, a truncated/corrupted/incompatible backup
+# file could silently apply only part of itself and report success. With
+# it, psql aborts on the first error with a non-zero exit — pipefail above
+# then correctly fails this script too.
 zcat "$BACKUP_FILE" | docker compose -f "$COMPOSE_FILE" exec -T db \
-    sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 
 echo "Restore complete. Verify row counts / a few known records before trusting this." >&2
