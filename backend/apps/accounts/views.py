@@ -3,14 +3,16 @@ from rest_framework.exceptions import AuthenticationFailed, Throttled
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.accounts.ratelimit import (
     RateLimitExceededError,
     check_rate_limit,
     client_identity,
-    peek_rate_limit,
-    record_failed_attempt,
+    release_rate_limit_slot,
+    reserve_rate_limit_slot,
 )
 from apps.accounts.serializers import TenantAwareTokenObtainPairSerializer
 from apps.seller_web.i18n import LANGUAGES, get_language, strings_for
@@ -75,14 +77,21 @@ class TenantAwareTokenObtainPairView(TokenObtainPairView):
         # DRF's AnonRateThrottle (the old approach here) counts every
         # request, right or wrong password — an admin logging in correctly
         # several times in a row (multiple tabs/devices) got locked out for
-        # minutes despite never once getting it wrong. Same peek/record
-        # pattern as SellerLoginView above and the OTP-redeem flow
-        # (apps.ledger.services) instead: only a *wrong* password counts.
+        # minutes despite never once getting it wrong. Reserve/release
+        # pattern instead (apps.accounts.ratelimit, same as SellerLoginView's
+        # OTP-redeem-flow counterpart in apps.ledger.services): reserving up
+        # front is an atomic increment (race-safe under concurrent
+        # requests — audit finding M-1), and a *correct* password releases
+        # the reservation again, so only wrong passwords actually count.
         attempt_key = f"admin_login_attempts:{client_identity(request)}"
         try:
-            peek_rate_limit(key=attempt_key, limit=ADMIN_LOGIN_ATTEMPT_LIMIT)
+            reserve_rate_limit_slot(
+                key=attempt_key,
+                limit=ADMIN_LOGIN_ATTEMPT_LIMIT,
+                window_seconds=ADMIN_LOGIN_ATTEMPT_WINDOW_SECONDS,
+            )
         except RateLimitExceededError as exc:
-            # peek_rate_limit raises a plain-Django exception (see
+            # reserve_rate_limit_slot raises a plain-Django exception (see
             # SellerLoginView's own try/except above) — DRF only
             # auto-converts its own exception types into a response, so
             # this must become a Throttled (429) explicitly or it
@@ -90,12 +99,37 @@ class TenantAwareTokenObtainPairView(TokenObtainPairView):
             raise Throttled(detail=str(exc)) from exc
 
         try:
-            return super().post(request, *args, **kwargs)
+            response = super().post(request, *args, **kwargs)
         except AuthenticationFailed:
-            record_failed_attempt(
-                key=attempt_key, window_seconds=ADMIN_LOGIN_ATTEMPT_WINDOW_SECONDS
-            )
             raise
+        else:
+            release_rate_limit_slot(key=attempt_key)
+            return response
+
+
+class TokenLogoutView(APIView):
+    """Audit finding H-3: without this, there was no way to end a JWT
+    session server-side at all — only a client-side sessionStorage.clear()
+    that left the (still perfectly valid) refresh token usable by anyone
+    who'd captured it (e.g. via the stored-XSS path fixed in H-1) until it
+    naturally expired, up to 24h later. Blacklisting the refresh token here
+    means a real logout actually revokes the session, not just forgets it
+    locally."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        refresh = request.data.get("refresh")
+        if not refresh:
+            return Response({"detail": "refresh is required."}, status=400)
+        try:
+            RefreshToken(refresh).blacklist()
+        except TokenError:
+            # Already expired/blacklisted/malformed — logout still succeeds
+            # either way, since the end state (this token unusable) is the
+            # same regardless of which of those it was.
+            pass
+        return Response(status=204)
 
 
 class MeView(APIView):

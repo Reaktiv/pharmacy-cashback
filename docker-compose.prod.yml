@@ -1,3 +1,13 @@
+# Audit finding M-8: the default json-file log driver has no size cap, so
+# container logs (especially `web`'s --access-log, which logs every
+# /healthz/ poll) grow unbounded over months. Applied to every service via
+# this one anchor so a new service added later doesn't silently miss it.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   db:
     image: postgres:16
@@ -13,6 +23,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    logging: *default-logging
 
   redis:
     image: redis:7
@@ -22,6 +33,7 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    logging: *default-logging
 
   web:
     build:
@@ -66,6 +78,7 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    logging: *default-logging
 
   worker:
     build:
@@ -94,6 +107,7 @@ services:
       retries: 3
       start_period: 20s
     restart: unless-stopped
+    logging: *default-logging
 
   beat:
     build:
@@ -111,6 +125,7 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
   frontend-build:
     build:
@@ -126,6 +141,7 @@ services:
     volumes:
       - frontend-dist:/out
     restart: "no"
+    logging: *default-logging
 
   nginx:
     image: nginx:1.27-alpine
@@ -143,6 +159,7 @@ services:
       - web
       - frontend-build
     restart: unless-stopped
+    logging: *default-logging
 
   certbot:
     image: certbot/certbot
@@ -152,6 +169,7 @@ services:
     entrypoint: >
       sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;"
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   pgdata:

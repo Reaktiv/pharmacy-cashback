@@ -1,6 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ApiError, clearTokens, getAccessToken, setTokens, SESSION_EXPIRED_EVENT } from '../api/client'
+import {
+  ApiError,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  setTokens,
+  SESSION_EXPIRED_EVENT,
+} from '../api/client'
 import { decodeAccessToken } from '../api/jwt'
 import type { Role } from '../api/types'
 
@@ -77,6 +84,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(() => {
+    // Best-effort, fire-and-forget: revoke the refresh token server-side
+    // (audit finding H-3) so "logout" actually ends the session instead of
+    // just forgetting it in this tab — a captured refresh token would
+    // otherwise keep working for up to 24h after the user thought they'd
+    // logged out. Read the tokens before clearTokens() wipes them; not
+    // awaited, since the UI should sign the user out immediately regardless
+    // of whether this network call succeeds (e.g. offline) — the access
+    // token, if still valid, will simply expire on its own at worst, and if
+    // it's already dead (the SESSION_EXPIRED_EVENT path below), there's
+    // nothing left to revoke anyway.
+    const accessToken = getAccessToken()
+    const refreshToken = getRefreshToken()
+    if (accessToken && refreshToken) {
+      fetch('/api/auth/token/logout/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ refresh: refreshToken }),
+      }).catch(() => {
+        // Nothing actionable client-side if this fails — the user is being
+        // signed out of this tab either way.
+      })
+    }
+
     clearTokens()
     sessionStorage.removeItem(USERNAME_KEY)
     // The single point every session-ending path funnels through — the

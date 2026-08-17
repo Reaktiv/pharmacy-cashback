@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "apps.tenants",
     "apps.accounts",
     "apps.customers",
@@ -154,6 +155,25 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
     "ROTATE_REFRESH_TOKENS": True,
+    # Audit finding H-3: without these two, nothing could ever revoke a
+    # JWT before its own expiry — not a password change, not an explicit
+    # logout. BLACKLIST_AFTER_ROTATION makes each refresh single-use (the
+    # rest_framework_simplejwt.token_blacklist app above is what actually
+    # enforces this — RefreshToken checks the blacklist automatically once
+    # that app is installed). CHECK_REVOKE_TOKEN makes CachingJWTAuthentication's
+    # existing (previously dead) check in apps/tenants/authentication.py
+    # actually run: every token minted after this change carries an
+    # `hash_password` claim, checked against the user's *current* password
+    # hash on every request, so changing a password immediately invalidates
+    # every outstanding access token for that user, not just future logins.
+    #
+    # One-time deploy consequence, not a bug: every token issued *before*
+    # this change lacks that claim, so every currently-logged-in session
+    # (admin/tenant_admin/seller JWT sessions) will see one 401 and need to
+    # log in again the moment this ships — see apps/accounts/views.py's
+    # logout endpoint for the explicit-logout half of this fix.
+    "BLACKLIST_AFTER_ROTATION": True,
+    "CHECK_REVOKE_TOKEN": True,
 }
 
 # Django's own default LOGGING only sends unhandled-exception tracebacks to

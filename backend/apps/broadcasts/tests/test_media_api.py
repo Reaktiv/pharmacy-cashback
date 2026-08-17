@@ -1,14 +1,22 @@
+import io
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 
 from apps.accounts.models import UserProfile
 from apps.broadcasts.models import BroadcastMedia
 
 
 def _tiny_png():
-    return SimpleUploadedFile(
-        "pic.png", b"\x89PNG\r\n\x1a\n" + b"0" * 100, content_type="image/png"
-    )
+    """A genuinely decodable PNG, not just the magic-byte header — the
+    upload endpoint now verifies the image actually decodes (audit finding
+    H-1: the old check trusted the client-declared Content-Type alone), so
+    a fixture that's only a signature followed by junk bytes would
+    (correctly) be rejected."""
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), color="white").save(buf, format="PNG")
+    return SimpleUploadedFile("pic.png", buf.getvalue(), content_type="image/png")
 
 
 @pytest.mark.django_db
@@ -119,6 +127,86 @@ def test_tenant_admin_can_fetch_their_own_media_file(api_client_for, make_user, 
 
 
 @pytest.mark.django_db
+def test_upload_rejects_svg_disguised_as_an_image(api_client_for, make_user, make_tenant):
+    """Regression test for audit finding H-1: an SVG (which can carry a
+    <script> tag) with a client-declared image/* Content-Type used to pass
+    every check that existed before this fix, and would then be served
+    back inline with that same declared type — a stored-XSS path. The
+    upload must now be rejected: image/svg+xml isn't in the allowlist, and
+    even if it somehow were, Pillow can't decode it."""
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    evil_svg = SimpleUploadedFile(
+        "evil.svg",
+        b"<svg xmlns='http://www.w3.org/2000/svg'><script>alert(document.cookie)</script></svg>",
+        content_type="image/svg+xml",
+    )
+
+    response = client.post("/api/broadcast-media/", {"file": evil_svg}, format="multipart")
+
+    assert response.status_code == 400
+    assert "rasm yoki video" in str(response.data).lower()
+
+
+@pytest.mark.django_db
+def test_upload_rejects_a_file_whose_declared_type_does_not_match_its_bytes(
+    api_client_for, make_user, make_tenant
+):
+    """A file claiming Content-Type: image/png but containing bytes that
+    aren't actually a decodable image must be rejected, not just checked by
+    string-matching the declared type (the exact gap audit finding H-1
+    describes)."""
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    fake_image = SimpleUploadedFile(
+        "not-a-real-image.png", b"this is not image data at all", content_type="image/png"
+    )
+
+    response = client.post("/api/broadcast-media/", {"file": fake_image}, format="multipart")
+
+    assert response.status_code == 400
+    assert "haqiqiy rasm emas" in str(response.data).lower()
+
+
+@pytest.mark.django_db
+def test_upload_rejects_a_file_whose_declared_type_claims_video_but_is_not(
+    api_client_for, make_user, make_tenant
+):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    fake_video = SimpleUploadedFile(
+        "not-a-real-video.mp4", b"this is not video data at all", content_type="video/mp4"
+    )
+
+    response = client.post("/api/broadcast-media/", {"file": fake_video}, format="multipart")
+
+    assert response.status_code == 400
+    assert "haqiqiy video emas" in str(response.data).lower()
+
+
+@pytest.mark.django_db
+def test_upload_accepts_a_real_mp4_container(api_client_for, make_user, make_tenant):
+    """A genuine (if minimal) MP4 container — real 'ftyp' box signature —
+    must still be accepted; the fix must not reject legitimate videos."""
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    # A minimal, real ISO base media 'ftyp' box (MP4 signature) followed by
+    # padding — enough for the container-signature check without needing a
+    # full, playable video file.
+    mp4_bytes = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"0" * 100
+    real_video = SimpleUploadedFile("clip.mp4", mp4_bytes, content_type="video/mp4")
+
+    response = client.post("/api/broadcast-media/", {"file": real_video}, format="multipart")
+
+    assert response.status_code == 201, response.data
+    assert response.data["media_type"] == "video"
+
+
+@pytest.mark.django_db
 def test_file_action_hands_off_to_nginx_via_x_accel_redirect(
     api_client_for, make_user, make_tenant
 ):
@@ -141,6 +229,25 @@ def test_file_action_hands_off_to_nginx_via_x_accel_redirect(
     assert response.content == b""
     assert response["Content-Type"] == "image/png"
     assert 'filename="pic.png"' in response["Content-Disposition"]
+
+
+@pytest.mark.django_db
+def test_media_file_is_served_as_an_attachment_not_inline(api_client_for, make_user, make_tenant):
+    """Second layer of the H-1 fix: even for an upload that passes
+    validation, the response must force a download (Content-Disposition:
+    attachment) rather than let a browser render it inline in this app's
+    origin if someone navigates to the URL directly. The admin panel itself
+    is unaffected — it always fetches this URL via apiFetchObjectUrl
+    (fetch + Blob), where Content-Disposition has no bearing on rendering."""
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    client = api_client_for(admin)
+    upload = client.post("/api/broadcast-media/", {"file": _tiny_png()}, format="multipart")
+    media_id = upload.data["id"]
+
+    response = client.get(f"/api/broadcast-media/{media_id}/file/")
+
+    assert response["Content-Disposition"].startswith("attachment")
 
 
 @pytest.mark.django_db

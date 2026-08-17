@@ -76,14 +76,16 @@ jobs:
       - name: Lint (ruff)
         run: ruff check backend
 
-      # Informational only for now — there's an existing backlog of type
-      # errors (largely django-stubs/Django version drift, not necessarily
-      # 132 real bugs) that predates this workflow. Once that backlog is
-      # paid down, drop `continue-on-error` here so this becomes a real gate
-      # instead of a report.
-      - name: Type check (mypy) — informational, not yet blocking
+      # Required gate: the previous "backlog" of ~141 errors was almost
+      # entirely the django-stubs mypy plugin never being registered
+      # (pyproject.toml's [tool.mypy] had plugins = []) — with that fixed,
+      # the real backlog was 6 genuine errors, now fixed, plus a handful of
+      # CheckConstraint(check=...) stub/runtime mismatches that are
+      # intentionally silenced with a documented `type: ignore[call-arg]`
+      # (django-stubs 6.0.7 expects Django 5.1+'s `condition=` kwarg; the
+      # app is pinned to Django 5.0.14, where only `check=` exists).
+      - name: Type check (mypy)
         run: mypy backend --config-file pyproject.toml
-        continue-on-error: true
 
   frontend:
     runs-on: ubuntu-latest

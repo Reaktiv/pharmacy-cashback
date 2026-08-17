@@ -200,13 +200,56 @@ docker compose -f docker-compose.prod.yml exec nginx nginx -t   # validate first
 docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
 ```
 
+## Backups
+
+`scripts/backup_db.sh` dumps the `db` service with `pg_dump`, verifies the
+dump (gzip integrity + a check that it's actually a pg_dump SQL stream, not
+an empty/truncated file), and prunes local copies older than `KEEP_DAYS`
+(14 by default). It never reads or prints `POSTGRES_PASSWORD` itself — the
+dump runs entirely inside the `db` container using that container's own
+environment.
+
+**Schedule it nightly** (crontab -e, alongside the existing nginx-restart
+job):
+
+```
+0 3 * * * cd /root/pharmacy-cashback && ./scripts/backup_db.sh >> /root/backups/backup-cron.log 2>&1
+```
+
+Failures exit non-zero and are logged to `$BACKUP_DIR/backup.log`
+(`/root/backups/backup.log` by default) — check that log (or wire cron's
+`MAILTO` / a monitoring check on the exit code) rather than assuming a
+scheduled run succeeded just because it's scheduled.
+
+**Off-box storage is still required and is NOT set up by this script.**
+Everything `backup_db.sh` produces lives on the same VPS disk as `pgdata`
+— a disk failure or an accidental `docker volume rm` destroys the database
+*and* every backup this script has ever made in the same event. Ship
+`$BACKUP_DIR` off-box on the same schedule (e.g. `rclone sync` to S3 /
+Backblaze B2, or a periodic `scp`/`rsync` to a second host) — this needs
+storage credentials that aren't part of this repo or this server's current
+configuration, so it's a required follow-up, not optional hardening.
+
+**Restore procedure**: `scripts/restore_db.sh /path/to/backup.sql.gz`.
+It verifies gzip integrity first, then refuses to run against a database
+that already has tables unless `FORCE=1` is set — a plain-SQL restore into
+a live, populated database can duplicate/conflict with existing rows
+rather than cleanly replace them. The intended disaster-recovery flow is:
+restore into a **fresh** `db` volume/container, verify the data, then cut
+the app over — not restore in place over a database still taking traffic.
+Restore was verified end-to-end against a throwaway container during this
+change (26/26 tables restored correctly); it has intentionally never been
+run against the production database, which this procedure doesn't require
+and shouldn't be used for.
+
+**Verification cadence**: a monthly restore drill (restore the latest
+nightly dump into a scratch container, confirm table counts and a few
+known rows look right) is the only way to know backups are actually
+restorable rather than merely present — the gzip/header check in
+`backup_db.sh` catches corruption, not application-level correctness.
+
 ## Notes
 
-- **Backups**: nothing here backs up the `pgdata` volume automatically.
-  At minimum, cron a nightly `docker compose -f docker-compose.prod.yml
-  exec -T db pg_dump -U pharmacy pharmacy_cashback | gzip > backup-$(date
-  +%F).sql.gz` off-box (e.g. to object storage) before relying on this in
-  production.
 - **Scaling**: see the sizing discussion in this project's chat history —
   the recommended starting VPS (2 vCPU / 4GB) comfortably covers roughly a
   dozen tenants before Postgres needs attention. Watch `docker stats` and

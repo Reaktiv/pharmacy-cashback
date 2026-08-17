@@ -86,16 +86,31 @@ class Transaction(TenantScopedModel):
             models.UniqueConstraint(
                 fields=["tenant", "idempotency_key"], name="unique_txn_idempotency_per_tenant"
             ),
+            # `check=` (not `condition=`) is deliberate here, not a typo: Django
+            # 5.0.14 (pinned in requirements.txt) only accepts `check=` on
+            # CheckConstraint — `condition=` doesn't exist until Django 5.1.
+            # django-stubs 6.0.7's stub already dropped `check=` in favor of
+            # the newer API, so mypy flags every one of these as an unknown
+            # kwarg even though it's the only spelling that actually works at
+            # the runtime Django version in use. Do NOT change these to
+            # `condition=` — that would raise TypeError on startup today. This
+            # will resolve on its own once the app upgrades to Django 5.1+.
             models.CheckConstraint(
-                check=models.Q(check_amount__gte=0), name="txn_check_amount_gte_0"
+                check=models.Q(check_amount__gte=0),  # type: ignore[call-arg]
+                name="txn_check_amount_gte_0",
             ),
             models.CheckConstraint(
-                check=models.Q(cashback_earned__gte=0), name="txn_cashback_earned_gte_0"
+                check=models.Q(cashback_earned__gte=0),  # type: ignore[call-arg]
+                name="txn_cashback_earned_gte_0",
             ),
             models.CheckConstraint(
-                check=models.Q(cashback_spent__gte=0), name="txn_cashback_spent_gte_0"
+                check=models.Q(cashback_spent__gte=0),  # type: ignore[call-arg]
+                name="txn_cashback_spent_gte_0",
             ),
-            models.CheckConstraint(check=models.Q(cash_paid__gte=0), name="txn_cash_paid_gte_0"),
+            models.CheckConstraint(
+                check=models.Q(cash_paid__gte=0),  # type: ignore[call-arg]
+                name="txn_cash_paid_gte_0",
+            ),
         ]
 
     def __str__(self):

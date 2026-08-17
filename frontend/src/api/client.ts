@@ -60,25 +60,52 @@ export class ApiError extends Error {
   }
 }
 
+// The backend rotates refresh tokens on every use (SIMPLE_JWT
+// ROTATE_REFRESH_TOKENS=True) — each call to /api/auth/token/refresh/
+// both consumes the current refresh token and returns a new one. Two
+// concurrent 401s (e.g. a page firing several queries at once) used to
+// each call refreshAccessToken() independently: the first to land would
+// rotate in a new refresh token, and the second — already holding the
+// now-superseded one in its closure — would refresh with a stale token
+// and force a full logout, even though the session was perfectly valid
+// moments earlier. Sharing one in-flight promise makes every concurrent
+// 401 await the *same* refresh instead of racing separate ones.
+let inFlightRefresh: Promise<string> | null = null
+
 async function refreshAccessToken(): Promise<string> {
-  const refresh = getRefreshToken()
-  if (!refresh) {
-    endSession()
-    throw new ApiError(401, { detail: translate(getStoredLanguage(), 'api_not_logged_in') })
+  if (inFlightRefresh) return inFlightRefresh
+
+  const doRefresh = async (): Promise<string> => {
+    const refresh = getRefreshToken()
+    if (!refresh) {
+      endSession()
+      throw new ApiError(401, { detail: translate(getStoredLanguage(), 'api_not_logged_in') })
+    }
+
+    const response = await fetch('/api/auth/token/refresh/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh }),
+    })
+    if (!response.ok) {
+      endSession()
+      throw new ApiError(response.status, await response.json().catch(() => ({})))
+    }
+    // ROTATE_REFRESH_TOKENS means this response carries a new refresh
+    // token too, not just a new access token — persisting only the access
+    // token would leave the now-superseded refresh token stored, ready to
+    // fail the *next* refresh once anything (e.g. the JWT-revocation work
+    // tracked for H-3) starts actually enforcing single-use rotation.
+    const data = (await response.json()) as { access: string; refresh?: string }
+    sessionStorage.setItem(ACCESS_KEY, data.access)
+    if (data.refresh) sessionStorage.setItem(REFRESH_KEY, data.refresh)
+    return data.access
   }
 
-  const response = await fetch('/api/auth/token/refresh/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh }),
+  inFlightRefresh = doRefresh().finally(() => {
+    inFlightRefresh = null
   })
-  if (!response.ok) {
-    endSession()
-    throw new ApiError(response.status, await response.json().catch(() => ({})))
-  }
-  const data = (await response.json()) as { access: string }
-  sessionStorage.setItem(ACCESS_KEY, data.access)
-  return data.access
+  return inFlightRefresh
 }
 
 /** Thin fetch wrapper: attaches the JWT, retries once through a refresh on

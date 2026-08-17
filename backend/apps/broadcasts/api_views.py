@@ -35,10 +35,22 @@ def _media_file_response(media) -> HttpResponse:
     Content-Type/Content-Disposition — nginx only ever substitutes the
     body — so the tenant-scoped auth check in `.get_object()` above the
     call site remains the only way to reach a given file; nginx just
-    serves the bytes once that check has already passed."""
+    serves the bytes once that check has already passed.
+
+    Content-Disposition is always `attachment` (audit finding H-1, second
+    layer alongside the upload-time validation in serializers.py): the
+    admin panel never navigates the browser to this URL directly — every
+    caller (MediaAttach preview, broadcast history thumbnails) goes through
+    apiFetchObjectUrl, which `fetch()`s the bytes and renders them from a
+    Blob, where Content-Disposition has no effect either way. `attachment`
+    costs that flow nothing, and it closes off the one path that isn't
+    covered by upload-time validation alone: a user manually opening this
+    URL directly (e.g. "open image in new tab") would otherwise have the
+    browser render whatever Content-Type is stored, inline, in this app's
+    own origin."""
     response = HttpResponse(content_type=media.content_type or "application/octet-stream")
     response["X-Accel-Redirect"] = f"/internal-media/{quote(media.file.name)}"
-    disposition = content_disposition_header(False, media.original_filename or "media")
+    disposition = content_disposition_header(True, media.original_filename or "media")
     if disposition:
         response["Content-Disposition"] = disposition
     return response

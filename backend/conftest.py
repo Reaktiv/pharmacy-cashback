@@ -10,6 +10,19 @@ from rest_framework.test import APIClient
 
 
 @pytest.fixture(autouse=True)
+def _isolate_media_root(settings, tmp_path):
+    """File-upload tests must never write into the real dev backend/media/
+    directory (the default MEDIA_ROOT) — it's shared, persistent across
+    runs, and can accumulate root-owned subdirectories from local Docker
+    use (the `web` container writes into it as root via a bind mount),
+    which then breaks every upload test with a PermissionError that has
+    nothing to do with the test itself. Every test gets its own disposable
+    directory instead, so the suite is hermetic regardless of what's on
+    disk in the real dev media folder."""
+    settings.MEDIA_ROOT = str(tmp_path)
+
+
+@pytest.fixture(autouse=True)
 def _clear_cache():
     """The Django cache (GlobalSettings.load(), see apps.tenants.models) is
     a real shared Redis instance, not per-test DB state — Django's usual

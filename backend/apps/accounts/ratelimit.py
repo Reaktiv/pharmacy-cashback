@@ -36,33 +36,62 @@ def check_rate_limit(*, key: str, limit: int, window_seconds: int) -> None:
         )
 
 
-def peek_rate_limit(*, key: str, limit: int) -> None:
-    """Raises RateLimitExceededError if `key` is already at/over `limit`,
-    without incrementing anything — call this up front so a request that's
-    going to be rejected doesn't do any work first. Pairs with
-    record_failed_attempt(), which does the actual incrementing."""
-    count = cache.get(key)
-    if count is not None and count >= limit:
+def reserve_rate_limit_slot(*, key: str, limit: int, window_seconds: int) -> None:
+    """Same body as check_rate_limit() — the reservation *is* the atomic
+    increment, raising once it pushes `key` over `limit`. Use this (paired
+    with release_rate_limit_slot() below) instead of check_rate_limit()
+    itself when only *failed* attempts should count: reserving up front and
+    releasing on success gets the same "only failures count" behavior as
+    the old peek_rate_limit()/record_failed_attempt() pair did, but without
+    that pair's race — peek_rate_limit's plain `cache.get()` read let N
+    concurrent requests all observe the same pre-increment count and all
+    pass, even once N exceeded the limit (audit finding M-1). Reserving via
+    an atomic increment closes that: there is no window where two
+    concurrent callers can both read a stale count, because there's nothing
+    to read — the increment itself is the check.
+    """
+    if cache.add(key, 1, timeout=window_seconds):
+        return
+    if cache.incr(key) > limit:
         raise RateLimitExceededError(
             "Juda ko'p urinish qilindi. Iltimos, birozdan so'ng qayta urinib ko'ring."
         )
 
 
-def record_failed_attempt(*, key: str, window_seconds: int) -> None:
-    """Increments `key`'s failure count, starting a fresh `window_seconds`
-    TTL on the first failure. Call only when an attempt actually failed —
-    pairs with peek_rate_limit(), which does the actual rejecting."""
-    if not cache.add(key, 1, timeout=window_seconds):
-        cache.incr(key)
+def release_rate_limit_slot(*, key: str) -> None:
+    """Undoes reserve_rate_limit_slot()'s increment once the guarded
+    attempt actually succeeded — call this only on success, the mirror
+    image of the old record_failed_attempt()'s "call only on failure"."""
+    try:
+        cache.decr(key)
+    except ValueError:
+        # Key already expired/evicted (its window rolled over) between the
+        # reservation and now — nothing to release, and decrementing a
+        # nonexistent key would just fabricate a bogus negative counter.
+        pass
 
 
 def client_identity(request) -> str:
-    """Same identification convention as DRF's SimpleRateThrottle.get_ident
-    with NUM_PROXIES unset (this project's REST_FRAMEWORK setting doesn't
-    configure it either): the whole X-Forwarded-For header if nginx set
-    one (see nginx/app.conf's proxy_set_header), else REMOTE_ADDR. Keys the
-    plain-Django rate limits below the same way DRF throttles key JWT
-    login, so both mechanisms treat "the client" identically."""
-    xff = request.META.get("HTTP_X_FORWARDED_FOR")
-    remote_addr = request.META.get("REMOTE_ADDR")
-    return "".join(xff.split()) if xff else remote_addr
+    """The real client IP, trusting only headers nginx itself sets from the
+    actual TCP connection — never a client-supplied one.
+
+    X-Forwarded-For is NOT used here: nginx's `proxy_set_header
+    X-Forwarded-For $proxy_add_x_forwarded_for` (nginx/app.conf) *appends*
+    to whatever X-Forwarded-For the client already sent rather than
+    replacing it, so a client could set a fresh bogus value on every
+    request and get a brand new rate-limit bucket each time — a full
+    bypass of every limiter keyed by this function (audit finding C-1).
+
+    X-Real-IP is safe to trust instead: nginx's `proxy_set_header
+    X-Real-IP $remote_addr` unconditionally *replaces* any X-Real-IP the
+    client sent with nginx's own view of the TCP peer address, and nginx
+    is the only thing that can reach the app (ufw exposes 80/443 only;
+    Postgres/Redis/the app port are never published — see DEPLOY.md). A
+    request that reaches Django with an X-Real-IP header can only have
+    gotten it from nginx.
+
+    REMOTE_ADDR is the fallback for anything that isn't behind nginx: the
+    local dev server, the Django test client, and manage.py runserver.
+    """
+    real_ip = request.META.get("HTTP_X_REAL_IP")
+    return real_ip or request.META.get("REMOTE_ADDR") or "unknown"

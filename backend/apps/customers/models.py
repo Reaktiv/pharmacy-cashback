@@ -92,8 +92,12 @@ class PendingCashback(TenantScopedModel):
 
     class Meta:
         constraints = [
+            # `check=` is correct, not `condition=` — see the same note in
+            # apps/ledger/models.py (Django 5.0.14, pinned, predates the
+            # `condition=` kwarg django-stubs 6.0.7 expects).
             models.CheckConstraint(
-                check=models.Q(amount__gte=0), name="pending_cashback_amount_gte_0"
+                check=models.Q(amount__gte=0),  # type: ignore[call-arg]
+                name="pending_cashback_amount_gte_0",
             ),
             models.UniqueConstraint(
                 fields=["tenant", "idempotency_key"],
@@ -126,7 +130,8 @@ class OTP(TenantScopedModel):
     class Meta:
         constraints = [
             models.CheckConstraint(
-                check=models.Q(amount_requested__gte=0), name="otp_amount_requested_gte_0"
+                check=models.Q(amount_requested__gte=0),  # type: ignore[call-arg]
+                name="otp_amount_requested_gte_0",
             ),
         ]
 

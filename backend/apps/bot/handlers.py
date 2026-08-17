@@ -277,6 +277,11 @@ async def _handle_receipt_image(message: Message, tenant, bot_row, file) -> None
         return
 
     buffer = await message.bot.download(file)
+    # aiogram's return type is BinaryIO | None only because passing an
+    # explicit `destination` makes it write there and return None instead
+    # — no destination is passed here, so it always returns the in-memory
+    # buffer.
+    assert buffer is not None
     image_bytes = buffer.read()
 
     qr_result = await sync_to_async(decode_receipt_qr, thread_sensitive=True)(image_bytes)

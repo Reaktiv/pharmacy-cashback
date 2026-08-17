@@ -11,6 +11,7 @@ per-customer balance computation the "never loop" rule is about.
 """
 
 from dataclasses import dataclass
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db.models import Avg, Count, Q, Sum
@@ -49,7 +50,7 @@ def get_cross_tenant_dashboard() -> list[dict]:
     query count here must stay flat as tenants are added, not grow with N.
     """
     today = timezone.localdate()
-    thirty_days_ago = timezone.now() - timezone.timedelta(days=30)
+    thirty_days_ago = timezone.now() - timedelta(days=30)
 
     tenants = list(Tenant.objects.all().order_by("name"))
     tenant_ids = [t.id for t in tenants]
@@ -214,7 +215,7 @@ def get_seller_transactions(
 
 def get_daily_earn_spend_report(*, tenant: Tenant, days: int = 30) -> list[dict]:
     """CLAUDE.md §7c: daily earn/spend totals over the last `days` days."""
-    since = timezone.localdate() - timezone.timedelta(days=days - 1)
+    since = timezone.localdate() - timedelta(days=days - 1)
     rows = (
         Transaction.objects.all_tenants()
         .filter(tenant=tenant, created_at__date__gte=since)

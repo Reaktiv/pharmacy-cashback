@@ -151,14 +151,19 @@ def test_broadcast_body_within_text_only_limit_is_accepted(
 def test_broadcast_body_over_media_caption_limit_is_rejected(
     api_client_for, make_user, make_tenant
 ):
+    import io
+
     from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
 
     tenant = make_tenant("t")
     admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
     client = api_client_for(admin)
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), color="white").save(buf, format="PNG")
     upload = client.post(
         "/api/broadcast-media/",
-        {"file": SimpleUploadedFile("pic.png", b"x" * 10, content_type="image/png")},
+        {"file": SimpleUploadedFile("pic.png", buf.getvalue(), content_type="image/png")},
         format="multipart",
     )
     media_id = upload.data["id"]
@@ -177,14 +182,19 @@ def test_broadcast_body_over_media_caption_limit_is_rejected(
 def test_broadcast_body_within_media_caption_limit_is_accepted(
     api_client_for, make_user, make_tenant
 ):
+    import io
+
     from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image
 
     tenant = make_tenant("t")
     admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
     client = api_client_for(admin)
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), color="white").save(buf, format="PNG")
     upload = client.post(
         "/api/broadcast-media/",
-        {"file": SimpleUploadedFile("pic.png", b"x" * 10, content_type="image/png")},
+        {"file": SimpleUploadedFile("pic.png", buf.getvalue(), content_type="image/png")},
         format="multipart",
     )
     media_id = upload.data["id"]

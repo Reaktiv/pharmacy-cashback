@@ -266,6 +266,7 @@ def _process_receipt_photo_sync(
         return
 
     check_data = asyncio.run(_fetch_receipt_via_playwright(check_url))
+    message: str | None
     if check_data is None:
         from apps.bot.i18n import t
 

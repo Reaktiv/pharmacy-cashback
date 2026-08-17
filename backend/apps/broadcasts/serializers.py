@@ -1,4 +1,5 @@
 from django.urls import reverse
+from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 
 from apps.broadcasts.models import (
@@ -19,22 +20,66 @@ MAX_VIDEO_BYTES = 50 * 1024 * 1024
 TEXT_ONLY_LIMIT = 4096
 MEDIA_CAPTION_LIMIT = 1024
 
+# Explicit allowlist, not a startswith("image/")/startswith("video/") check
+# (audit finding H-1): the old check let ANY client-declared image/* or
+# video/* Content-Type through — including image/svg+xml, which this app
+# then served back with that same declared type and Content-Disposition:
+# inline, i.e. a browser would execute a <script> embedded in an "image"
+# upload in this app's own origin. Every type below is one Telegram's Bot
+# API and every mainstream browser render as inert raster/video data, never
+# as markup.
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm"}
+
+
+def _verify_image(uploaded_file) -> None:
+    """Decoder-level check, not just a Content-Type string match: Pillow has
+    no SVG plugin, so a mislabeled/renamed SVG (or any non-image bytes)
+    fails here even if it somehow claimed an allowed image Content-Type.
+    Image.verify() is the standard Pillow pattern for validating untrusted
+    input without doing the extra work of a full pixel decode."""
+    uploaded_file.seek(0)
+    try:
+        with Image.open(uploaded_file) as img:
+            img.verify()
+    except (UnidentifiedImageError, OSError) as exc:
+        raise serializers.ValidationError("Fayl haqiqiy rasm emas.") from exc
+    finally:
+        uploaded_file.seek(0)
+
+
+def _looks_like_real_video(head: bytes) -> bool:
+    """Cheap, dependency-free container-signature check on the file's first
+    bytes: an ISO base media 'ftyp' box (MP4/MOV) or a WebM/Matroska EBML
+    header. Not a full parse — nothing here validates codecs/streams — but
+    it's enough to reject a renamed non-video payload (e.g. an HTML/SVG
+    file with a spoofed video/* Content-Type)."""
+    if len(head) >= 8 and head[4:8] == b"ftyp":
+        return True
+    return head[:4] == b"\x1a\x45\xdf\xa3"
+
 
 def _validate_media_file_size(uploaded_file):
     """Shared by BroadcastMediaSerializer and PlatformBroadcastMediaSerializer
     so the two composers can never silently drift apart on Telegram's real
-    upload limits."""
+    upload limits or on what actually counts as "an image"/"a video" here."""
     content_type = uploaded_file.content_type or ""
-    if content_type.startswith("image/"):
+    if content_type in ALLOWED_IMAGE_TYPES:
         if uploaded_file.size > MAX_IMAGE_BYTES:
             raise serializers.ValidationError(
                 f"Rasm hajmi {MAX_IMAGE_BYTES // (1024 * 1024)}MB dan oshmasligi kerak."
             )
-    elif content_type.startswith("video/"):
+        _verify_image(uploaded_file)
+    elif content_type in ALLOWED_VIDEO_TYPES:
         if uploaded_file.size > MAX_VIDEO_BYTES:
             raise serializers.ValidationError(
                 f"Video hajmi {MAX_VIDEO_BYTES // (1024 * 1024)}MB dan oshmasligi kerak."
             )
+        uploaded_file.seek(0)
+        head = uploaded_file.read(64)
+        uploaded_file.seek(0)
+        if not _looks_like_real_video(head):
+            raise serializers.ValidationError("Fayl haqiqiy video emas.")
     else:
         raise serializers.ValidationError("Faqat rasm yoki video fayl yuklash mumkin.")
 

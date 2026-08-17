@@ -39,7 +39,16 @@ logger = logging.getLogger(__name__)
 # of truth for what a QR code on a real receipt encodes.
 TRUSTED_CHECK_HOST = "ofd.soliq.uz"
 
-_ZXING_QR_ONLY = zxingcpp.BarcodeFormat.QRCode
+_ZXING_QR_ONLY = zxingcpp.BarcodeFormats(zxingcpp.BarcodeFormat.QRCode)
+
+# Explicit, intentional ceiling (audit finding M-5) rather than relying
+# incidentally on Pillow's default MAX_IMAGE_PIXELS decompression-bomb
+# guard (~89 megapixels) and Telegram's 20MB file-size cap. A real receipt
+# photo from any phone camera is nowhere near this large; this exists so
+# the bound on memory used by the 2x-upscale stage below is something this
+# codebase actually chose and tests, not a side effect of two other
+# libraries' unrelated defaults.
+MAX_RECEIPT_IMAGE_PIXELS = 6000 * 6000
 
 
 @dataclass
@@ -88,6 +97,14 @@ def decode_receipt_qr(image_bytes: bytes) -> QRDecodeResult | None:
     try:
         pil_image = Image.open(BytesIO(image_bytes)).convert("RGB")
     except Exception:
+        return None
+
+    if pil_image.width * pil_image.height > MAX_RECEIPT_IMAGE_PIXELS:
+        logger.info(
+            "receipt_qr_decode_rejected reason=too_large width=%d height=%d",
+            pil_image.width,
+            pil_image.height,
+        )
         return None
 
     bgr = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)

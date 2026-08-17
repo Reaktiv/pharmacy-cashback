@@ -1,10 +1,18 @@
+import io
 from unittest.mock import patch
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from PIL import Image
 
 from apps.accounts.models import UserProfile
 from apps.broadcasts.models import Broadcast, PlatformBroadcast
+
+
+def _tiny_png(name="pic.png"):
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), color="white").save(buf, format="PNG")
+    return SimpleUploadedFile(name, buf.getvalue(), content_type="image/png")
 
 NON_SUPERADMIN_ROLES = [
     UserProfile.Role.TENANT_ADMIN,
@@ -124,7 +132,7 @@ def test_platform_broadcast_media_file_action_hands_off_to_nginx(api_client_for,
     client = api_client_for(superadmin)
     upload = client.post(
         "/api/platform-broadcast-media/",
-        {"file": SimpleUploadedFile("clip.png", b"x" * 10, content_type="image/png")},
+        {"file": _tiny_png("clip.png")},
         format="multipart",
     )
     media_id = upload.data["id"]

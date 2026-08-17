@@ -17,7 +17,7 @@ from django.db.models import Avg, Count, Sum
 from django.utils import timezone
 
 from apps.accounts.models import Seller
-from apps.accounts.ratelimit import peek_rate_limit, record_failed_attempt
+from apps.accounts.ratelimit import release_rate_limit_slot, reserve_rate_limit_slot
 from apps.customers.models import OTP, Customer, PendingCashback
 from apps.ledger.models import Transaction
 from apps.tenants.models import GlobalSettings, Tenant
@@ -378,14 +378,20 @@ def redeem_via_otp(
     action can both spend and earn).
 
     Rate-limited against OTP guessing (CLAUDE.md §8), but only failed
-    attempts count — peek_rate_limit() rejects up front without touching
-    the counter, and record_failed_attempt() only fires from the except
-    block below. A busy seller doing many *valid* redemptions in a row
-    must never get throttled for it; only wrong-code/insufficient-balance
-    guesses should burn down the allowance.
+    attempts count — reserve_rate_limit_slot() atomically reserves a slot
+    up front (race-safe under concurrent requests — audit finding M-1,
+    same fix as TenantAwareTokenObtainPairView's login throttle) and
+    release_rate_limit_slot() gives it back once the `else` block below
+    confirms the attempt actually succeeded. A busy seller doing many
+    *valid* redemptions in a row must never get throttled for it; only
+    wrong-code/insufficient-balance guesses should burn down the allowance.
     """
     otp_attempt_key = f"otp_redeem_attempts:{seller.id}"
-    peek_rate_limit(key=otp_attempt_key, limit=OTP_REDEEM_ATTEMPT_LIMIT)
+    reserve_rate_limit_slot(
+        key=otp_attempt_key,
+        limit=OTP_REDEEM_ATTEMPT_LIMIT,
+        window_seconds=OTP_REDEEM_ATTEMPT_WINDOW_SECONDS,
+    )
 
     try:
         with db_transaction.atomic():
@@ -426,8 +432,13 @@ def redeem_via_otp(
             otp.used = True
             otp.save(update_fields=["used"])
     except (InvalidOTPError, InsufficientBalanceError):
-        record_failed_attempt(key=otp_attempt_key, window_seconds=OTP_REDEEM_ATTEMPT_WINDOW_SECONDS)
+        # Reservation already counted this attempt — nothing further to do;
+        # the raise below is what makes this a "failure" that keeps its
+        # slot spent, as opposed to the success path, which explicitly
+        # gives its slot back.
         raise
+    else:
+        release_rate_limit_slot(key=otp_attempt_key)
 
     return txn
 

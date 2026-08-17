@@ -24,7 +24,7 @@ class TenantSerializer(serializers.ModelSerializer):
     # tenant bound, so Branch.objects (tenant-context-filtered) would
     # raise TenantContextError here. validate_receipt_branch below does
     # the real "does this branch belong to this tenant" check instead.
-    receipt_branch = serializers.PrimaryKeyRelatedField(
+    receipt_branch: serializers.PrimaryKeyRelatedField = serializers.PrimaryKeyRelatedField(
         queryset=Branch.objects.all_tenants(), required=False, allow_null=True
     )
 

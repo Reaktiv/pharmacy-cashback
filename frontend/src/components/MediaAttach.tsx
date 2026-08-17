@@ -13,6 +13,14 @@ import {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024
 
+// Mirrors the backend allowlist (apps/broadcasts/serializers.py) — a real
+// allowlist, not startswith('image/')/startswith('video/'), so this can't
+// wave through image/svg+xml or similar (audit finding H-1). This is a UX
+// nicety only: the backend re-validates with an actual decoder/signature
+// check on every upload regardless of what the client claims.
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const ALLOWED_VIDEO_TYPES = new Set(['video/mp4', 'video/quicktime', 'video/webm'])
+
 export interface AttachedMedia {
   id: number
   mediaType: 'image' | 'video'
@@ -22,8 +30,8 @@ export interface AttachedMedia {
 }
 
 function validate(file: File, t: TFunction): string | null {
-  const isImage = file.type.startsWith('image/')
-  const isVideo = file.type.startsWith('video/')
+  const isImage = ALLOWED_IMAGE_TYPES.has(file.type)
+  const isVideo = ALLOWED_VIDEO_TYPES.has(file.type)
   if (!isImage && !isVideo) return t('media_only_image_or_video')
   if (isImage && file.size > MAX_IMAGE_BYTES) return t('media_image_too_large')
   if (isVideo && file.size > MAX_VIDEO_BYTES) return t('media_video_too_large')
@@ -151,7 +159,7 @@ export default function MediaAttach({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
         style={{ display: 'none' }}
         onChange={(event) => {
           const file = event.target.files?.[0]

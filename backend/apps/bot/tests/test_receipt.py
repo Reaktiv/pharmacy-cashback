@@ -944,6 +944,36 @@ def test_decode_receipt_qr_returns_none_for_non_image_bytes():
     assert decode_receipt_qr(b"not an image at all") is None
 
 
+def test_decode_receipt_qr_rejects_images_over_the_pixel_ceiling(monkeypatch):
+    """Regression test for audit finding M-5: decode_receipt_qr must refuse
+    to run its cv2 pipeline (including the 2x-upscale stage) on an image
+    over the intentional pixel ceiling, rather than relying incidentally on
+    Pillow's/Telegram's own unrelated size limits. The threshold is
+    monkeypatched down to something a test can cheaply generate — the
+    behavior under test is "rejects when over the configured ceiling", not
+    the specific production value of that ceiling."""
+    import io
+
+    from PIL import Image
+
+    import apps.bot.qr as qr_module
+
+    monkeypatch.setattr(qr_module, "MAX_RECEIPT_IMAGE_PIXELS", 100 * 100)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 200), color="white").save(buf, format="PNG")
+
+    assert decode_receipt_qr(buf.getvalue()) is None
+
+
+def test_decode_receipt_qr_still_decodes_images_under_the_pixel_ceiling():
+    """The ceiling must not reject ordinary-sized real receipt photos —
+    same real-QR fixture used by the other decode tests here, well under
+    the default MAX_RECEIPT_IMAGE_PIXELS."""
+    result = decode_receipt_qr(SAMPLE_QR_PNG)
+    assert result is not None
+
+
 @pytest.mark.parametrize(
     "url,expected",
     [
