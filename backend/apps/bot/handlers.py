@@ -20,6 +20,8 @@ Before registration there's no Customer row yet, so the chosen language
 rides along in FSM state data instead (see on_registration_language_select).
 """
 
+import logging
+
 from aiogram import F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -42,9 +44,11 @@ from apps.bot.i18n import (
     button_labels,
     t,
 )
-from apps.bot.qr import decode_receipt_qr, is_trusted_check_url
+from apps.bot.qr import QrFailure, decode_receipt_qr, normalize_check_url
 from apps.bot.states import RedeemStates, SettingsStates
 from apps.bot.tasks import process_receipt_photo
+
+logger = logging.getLogger(__name__)
 
 REGISTRATION_LANGUAGE_PREFIX = "reglang"
 SETTINGS_LANGUAGE_PREFIX = "setlang"
@@ -248,21 +252,47 @@ async def on_receipt_button(message: Message, tenant, bot_row) -> None:
 # Telegram recompresses anything sent as a "photo" down to ~1280px and
 # re-encodes it as JPEG, which is often exactly what destroys a receipt's
 # tiny QR modules. A "document" upload skips that pipeline entirely and
-# keeps the original file — RECEIPT_IMAGE_DOCUMENT_MIME_TYPES restricts
-# on_receipt_document to the raster formats decode_receipt_qr (PIL) can
-# actually open, so a customer sending some unrelated file (a PDF, a
-# .docx) is silently ignored rather than mistaken for a receipt.
-RECEIPT_IMAGE_DOCUMENT_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+# keeps the original file.
+#
+# This used to be an exact allowlist of client-supplied MIME strings
+# (image/jpeg, image/png, ...), and that was itself a bug of the same shape
+# as the HEIC one it was patched to fix: Document.mime_type comes from
+# whichever app the customer used to send the file, not from Telegram's
+# servers, so it's inconsistent across clients/versions, and some clients
+# send application/octet-stream for a perfectly normal image. An exact
+# allowlist silently drops every upload from a client that doesn't match it
+# byte-for-byte — that's exactly what happened to iPhone HEIC uploads before
+# image/heic was added by hand, and it would keep happening for every format
+# nobody thought to add ahead of time (GIF, BMP, TIFF screenshots all decode
+# fine and were rejected here for no reason).
+#
+# So this is now deliberately loose: its only job is to skip downloading an
+# attachment that's obviously not an image at all (a PDF, a .docx), cheaply,
+# before spending a network round-trip on it. It is NOT the check that
+# decides whether an upload is a usable receipt — that's decided after
+# download, from the bytes themselves, by _load_grayscale's own
+# Image.open()-based format check (apps/bot/qr.py), which is also what keeps
+# this looseness safe: nothing this filter now lets through is unaccounted
+# for there.
+def _looks_like_receipt_document(mime_type: str | None) -> bool:
+    return (
+        mime_type is None
+        or mime_type == "application/octet-stream"
+        or mime_type.startswith("image/")
+    )
 
 
-async def _handle_receipt_image(message: Message, tenant, bot_row, file) -> None:
+async def _handle_receipt_image(
+    message: Message, tenant, bot_row, file, *, upload_kind: str
+) -> None:
     """Shared body for on_receipt_photo and on_receipt_document below — the
     only difference between the two is which Telegram object carries the
-    file_id or download() to fetch bytes from. Reads the QR code
-    synchronously (fast: local image decode, no network), then hands off to
-    Celery (apps.bot.tasks.process_receipt_photo) for the slow part —
-    reading the receipt off ofd.soliq.uz needs a real headless-browser page
-    load."""
+    file_id or download() to fetch bytes from (upload_kind records which,
+    purely for the logging below — apps.bot.qr stays transport-agnostic and
+    never sees it). Reads the QR code synchronously (fast: local image
+    decode, no network), then hands off to Celery
+    (apps.bot.tasks.process_receipt_photo) for the slow part — reading the
+    receipt off ofd.soliq.uz needs a real headless-browser page load."""
     assert message.from_user is not None
     assert message.bot is not None
 
@@ -285,20 +315,80 @@ async def _handle_receipt_image(message: Message, tenant, bot_row, file) -> None
     image_bytes = buffer.read()
 
     qr_result = await sync_to_async(decode_receipt_qr, thread_sensitive=True)(image_bytes)
-    if qr_result is None:
-        await message.answer(t(language, "receipt_qr_not_found"))
+    if isinstance(qr_result, QrFailure):
+        # qr_result.detail (raw exception text, HEIC-support hint) is
+        # diagnostic only and never shown to the customer — it's in this log
+        # line for support/on-call use instead. WARNING, not INFO: this is a
+        # customer-visible failure, not routine decode telemetry (that lives
+        # in apps.bot.qr's own logging, at whichever level fits a library
+        # module logging its own internal outcome).
+        #
+        # detail=%r (repr), not %s: this always renders as one line (repr
+        # escapes embedded newlines as literal "\n" rather than emitting
+        # them) with no other formatting surprises, which keeps this a
+        # single log record no matter what an exception message happens to
+        # contain, and makes it a stable, parseable field for
+        # apps/bot/management/commands/receipt_qr_report.py.
+        logger.warning(
+            "receipt_qr_rejected upload_kind=%s reason=%s detail=%r",
+            upload_kind,
+            qr_result.reason,
+            qr_result.detail,
+        )
+        # Each QrFailure.reason gets its own message: "your file is too big"
+        # and "we couldn't open your file" call for different customer
+        # action than "the QR itself wasn't found in an otherwise-fine
+        # photo" does, and conflating them (as an earlier version of this
+        # handler did for image_too_large/unreadable_image) sends someone
+        # with a perfectly good photo down the "get closer to the QR"
+        # troubleshooting path when their real problem is a corrupt upload.
+        message_key = {
+            "image_too_large": "receipt_image_too_large",
+            "unreadable_image": "receipt_image_unreadable",
+        }.get(qr_result.reason, "receipt_qr_not_found")
+        await message.answer(t(language, message_key))
         return
-    if not is_trusted_check_url(qr_result.value):
+
+    check_url = normalize_check_url(qr_result.value)
+    if check_url is None:
+        # A QR code that decoded fine but didn't pass validation is the
+        # signal that tells us which check-URL shape real receipts actually
+        # use (apps/bot/qr.py's normalize_check_url currently accepts both
+        # /epi and /check — this is how that gets confirmed or revised from
+        # real traffic instead of vendor documentation alone). Truncated:
+        # this is attacker-controlled/untrusted input, and truncating keeps
+        # a pathological payload out of the log record.
+        #
+        # raw_value=%r (repr), not %s: qr_result.value is a QR code's
+        # decoded text, which is arbitrary attacker-controlled content — it
+        # could contain a literal newline (splitting this into two log
+        # "lines"), or be crafted to look like another log record entirely
+        # (log injection). repr() renders any string as a single-line,
+        # syntactically-quoted literal (embedded newlines become the two
+        # characters "\n", not an actual line break), which closes both
+        # problems and gives apps/bot/management/commands/
+        # receipt_qr_report.py an unambiguous, ast.literal_eval-able field.
+        logger.warning(
+            "receipt_qr_untrusted upload_kind=%s raw_value=%r",
+            upload_kind,
+            qr_result.value[:200],
+        )
         await message.answer(t(language, "receipt_untrusted_url"))
         return
 
+    logger.info(
+        "receipt_qr_accepted upload_kind=%s strategy=%s size_px=%d",
+        upload_kind,
+        qr_result.strategy,
+        qr_result.size_px,
+    )
     await message.answer(t(language, "receipt_processing"))
     process_receipt_photo.delay(
         tenant_id=tenant.id,
         customer_id=customer.id,
         chat_id=message.chat.id,
         bot_id=bot_row.id,
-        check_url=qr_result.value,
+        check_url=check_url,
     )
 
 
@@ -308,14 +398,16 @@ async def on_receipt_photo(message: Message, tenant, bot_row) -> None:
     discoverable prompt) — matches F.contact being a plain global handler
     rather than gated behind a menu tap."""
     assert message.photo is not None  # guaranteed by the F.photo filter this is registered under
-    await _handle_receipt_image(message, tenant, bot_row, message.photo[-1])
+    await _handle_receipt_image(message, tenant, bot_row, message.photo[-1], upload_kind="photo")
 
 
 async def on_receipt_document(message: Message, tenant, bot_row) -> None:
     """Same flow as on_receipt_photo, but for a receipt sent as a file —
-    see RECEIPT_IMAGE_DOCUMENT_MIME_TYPES above for why this exists."""
+    see _looks_like_receipt_document above for why this exists."""
     assert message.document is not None  # guaranteed by this handler's own F.document filter
-    await _handle_receipt_image(message, tenant, bot_row, message.document)
+    await _handle_receipt_image(
+        message, tenant, bot_row, message.document, upload_kind="document"
+    )
 
 
 async def on_redeem_start(message: Message, tenant, bot_row, state: FSMContext) -> None:
@@ -446,7 +538,7 @@ def register_handlers(router) -> None:
     router.message.register(on_receipt_button, F.text.in_(button_labels("receipt_button")))
     router.message.register(on_receipt_photo, F.photo)
     router.message.register(
-        on_receipt_document, F.document.mime_type.in_(RECEIPT_IMAGE_DOCUMENT_MIME_TYPES)
+        on_receipt_document, F.document.mime_type.func(_looks_like_receipt_document)
     )
     router.message.register(on_redeem_start, F.text.in_(button_labels("redeem_button")))
     router.message.register(on_redeem_amount, RedeemStates.awaiting_amount)

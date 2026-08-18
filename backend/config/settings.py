@@ -4,6 +4,8 @@ Django settings for the Pharmacy Cashback SaaS platform.
 See CLAUDE.md §9 for the tech stack and conventions this file implements.
 """
 
+import logging
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -183,12 +185,48 @@ SIMPLE_JWT = {
 # compose logs web`. Route it to stdout unconditionally instead, at INFO so
 # uvicorn's request-level warnings (4xx client errors DRF logs at INFO) show
 # up too, not just crashes.
+#
+# Any app's own logger.info()/.warning() calls (logging.getLogger(__name__)
+# under apps.*, e.g. apps/bot/handlers.py's receipt-QR telemetry or apps/
+# ledger/tasks.py's daily seller summary) were going nowhere without an
+# entry here: with no matching logger configured, they propagate to the
+# root logger, which dictConfig leaves with zero handlers and Python's
+# default WARNING level. INFO records were silently dropped before ever
+# reaching a handler; WARNING records only surfaced via logging.lastResort,
+# an untimestamped stderr fallback with no level/logger-name prefix —
+# undocumented, not something to build a log parser against (see apps/bot/
+# management/commands/receipt_qr_report.py).
+#
+# This is keyed on "apps", not "apps.bot" — a per-app entry was tried first
+# and had to be reverted: it fixes exactly the one app someone remembered to
+# add and leaves every other apps.* module (apps.ledger, apps.tenants, ...)
+# in the same silently-handler-less state, which is the same shape of bug
+# as the receipt-QR path had twice over (a client-supplied MIME allowlist,
+# then an exact-format allowlist) — a hand-maintained list that silently
+# drops whatever nobody remembered to add. Python's logger hierarchy is
+# dotted-name-prefix based, so one entry on the "apps" parent covers every
+# apps.* logger project-wide, present or future, with no per-app step to
+# remember. Verified: a handler on "apps" receives records from both
+# apps.bot.qr and apps.ledger.tasks, and does NOT receive django.request —
+# the scope is exactly the project's own code, not Django's or a
+# third-party library's.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
+    "formatters": {
+        "apps_console": {
+            "()": "logging.Formatter",
+            "format": "%(asctime)s.%(msecs)03dZ %(levelname)s %(name)s %(message)s",
+            "datefmt": "%Y-%m-%dT%H:%M:%S",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
+        },
+        "apps_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "apps_console",
         },
     },
     "loggers": {
@@ -197,8 +235,28 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "apps": {
+            "handlers": ["apps_console"],
+            "level": "INFO",
+            # True, unlike "django" above: root has no handlers of its own
+            # configured here, so letting the record propagate past
+            # apps_console doesn't risk a duplicate line — it just also lets
+            # pytest's caplog fixture see these records (it captures via a
+            # handler it attaches to the root logger; propagate=False would
+            # stop every apps.* record at this logger and never reach it,
+            # breaking every caplog-based test in every app).
+            "propagate": True,
+        },
     },
 }
+# %(asctime)s above renders in whatever time.localtime() reports, which is
+# only UTC because containers happen to run with no TZ set — pin it
+# explicitly rather than relying on that. This is a process-wide effect on
+# every logging.Formatter (there's no per-formatter way to set it via
+# dictConfig), which is fine here: no other formatter in this project sets a
+# format string that includes asctime at all, so nothing else's output
+# changes.
+logging.Formatter.converter = time.gmtime
 
 # Celery (CLAUDE.md §9: notifications, broadcasts throttled to Telegram's ~25 msg/sec)
 CELERY_BROKER_URL = REDIS_URL

@@ -223,9 +223,9 @@ _STRINGS: dict[str, dict[Language, str]] = {
         "ru": "🧾 Отправить чек",
     },
     "receipt_ask_photo": {
-        "uz": "Chekingizning QR kodi aniq ko'rinadigan suratini yuboring. Agar o'qilmasa — rasmni 📎 fayl sifatida yuboring (Telegram uni siqib, sifatini pasaytirmaydi).",
-        "en": "Send a photo of your receipt with the QR code clearly visible. If it doesn't read, send it as a 📎 file instead (Telegram won't compress it).",
-        "ru": "Отправьте фото чека, на котором чётко виден QR-код. Если не считается — отправьте фото как 📎 файл (Telegram его не сожмёт).",
+        "uz": "QR kodni yaqindan, ekranni to'ldirib suratga oling — butun chekni emas, faqat QR kodning o'zini. O'qilmasa — rasmni 📎 fayl sifatida yuboring (Telegram uni siqib, mayda detallarini yo'qotmasin).",
+        "en": "Get close and photograph the QR code so it fills the frame — not the whole receipt. If it doesn't read, send it as a 📎 file instead (so Telegram doesn't compress away the fine detail).",
+        "ru": "Сфотографируйте QR-код крупным планом, чтобы он занимал весь кадр — не весь чек целиком. Если не считается — отправьте как 📎 файл (чтобы Telegram не сжал мелкие детали).",
     },
     "receipt_processing": {
         "uz": "⏳ Chek tekshirilmoqda...",
@@ -233,9 +233,19 @@ _STRINGS: dict[str, dict[Language, str]] = {
         "ru": "⏳ Проверяем ваш чек...",
     },
     "receipt_qr_not_found": {
-        "uz": "Rasmda QR kod topilmadi. Qayta suratga oling yoki rasmni 📎 fayl sifatida yuborib ko'ring — Telegram fotosuratlarni siqib, QR kodning mayda detallarini yo'qotib qo'yishi mumkin.",
-        "en": "No QR code found in the photo. Retake it, or try sending it as a 📎 file instead — Telegram compresses photos, which can destroy a QR code's fine detail.",
-        "ru": "На фото не найден QR-код. Переснимите или попробуйте отправить как 📎 файл — Telegram сжимает фото, из-за чего мелкие детали QR-кода могут теряться.",
+        "uz": "Rasmda QR kod topilmadi. QR kodga yaqinroq borib, uni ekranga to'ldirib qayta suratga oling — butun chekni suratga olsangiz, QR kod juda kichik chiqib qoladi. Yoki rasmni 📎 fayl sifatida yuborib ko'ring (Telegram fotosuratlarni siqib, mayda detallarni yo'qotishi mumkin).",
+        "en": "No QR code found in the photo. Get closer and retake it so the QR code fills the frame — a photo of the whole receipt makes the QR too small to read. Or try sending it as a 📎 file instead (Telegram compresses photos, which can destroy fine detail).",
+        "ru": "На фото не найден QR-код. Подойдите ближе и переснимите так, чтобы QR-код занимал весь кадр — на фото всего чека он получается слишком мелким. Либо отправьте как 📎 файл — Telegram сжимает фото, из-за чего мелкие детали могут теряться.",
+    },
+    "receipt_image_too_large": {
+        "uz": "Rasm hajmi juda katta ekan, uni o'qib bo'lmadi. Iltimos, kamera sozlamalarida rasm o'lchamini pasaytiring yoki rasmni oddiy surat (📷) sifatida yuboring.",
+        "en": "That image is too large to process. Please lower your camera's photo resolution, or send it as a regular photo (📷) instead of a file.",
+        "ru": "Это изображение слишком большое для обработки. Пожалуйста, уменьшите разрешение фото в настройках камеры или отправьте его как обычное фото (📷), а не файл.",
+    },
+    "receipt_image_unreadable": {
+        "uz": "Bu faylni ochib bo'lmadi — u buzilgan yoki bu botga notanish formatda bo'lishi mumkin. Iltimos, boshqa rasm yuboring yoki oddiy surat (📷) sifatida yuborib ko'ring.",
+        "en": "We couldn't open that file — it may be corrupted or in a format this bot doesn't support. Please send a different image, or try sending it as a regular photo (📷) instead.",
+        "ru": "Не удалось открыть этот файл — возможно, он повреждён или имеет формат, который бот не поддерживает. Пожалуйста, отправьте другое изображение или попробуйте отправить как обычное фото (📷).",
     },
     "receipt_untrusted_url": {
         "uz": "Bu QR kod chek havolasi emas.",

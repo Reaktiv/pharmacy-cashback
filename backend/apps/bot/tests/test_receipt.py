@@ -1,10 +1,11 @@
 import base64
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from PIL import Image
 
-from apps.bot.qr import decode_receipt_qr, is_trusted_check_url
+from apps.bot.qr import QrFailure, QrResult, decode_receipt_qr, is_trusted_check_url
 from apps.bot.services import handle_receipt_check_data
 from apps.bot.tasks import _process_receipt_photo_sync
 from apps.ledger.models import Transaction
@@ -849,9 +850,10 @@ EDGE_QR_PNG = base64.b64decode(
 
 def test_decode_receipt_qr_decodes_a_real_qr_code():
     result = decode_receipt_qr(SAMPLE_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
-    assert result.decoder == "zxing"
+    assert result.strategy == "plain"
+    assert result.size_px > 0
 
 
 def test_decode_receipt_qr_decodes_a_blurred_qr_code():
@@ -859,31 +861,31 @@ def test_decode_receipt_qr_decodes_a_blurred_qr_code():
     # (see apps/bot/qr.py's module docstring) — this is the "recoverable
     # middle ground" the staged pipeline exists for.
     result = decode_receipt_qr(BLURRED_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
 def test_decode_receipt_qr_decodes_a_rotated_qr_code():
     result = decode_receipt_qr(ROTATED_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
 def test_decode_receipt_qr_decodes_a_low_contrast_qr_code():
     result = decode_receipt_qr(LOW_CONTRAST_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
 def test_decode_receipt_qr_decodes_an_overexposed_qr_code():
     result = decode_receipt_qr(BRIGHT_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
 def test_decode_receipt_qr_decodes_an_underexposed_qr_code():
     result = decode_receipt_qr(DARK_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
@@ -893,19 +895,19 @@ def test_decode_receipt_qr_decodes_a_jpeg_compressed_qr_code():
     # same lossy DCT-blocking mechanism, not just a PNG with different
     # pixel values.
     result = decode_receipt_qr(JPEG_COMPRESSED_QR_JPG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
 def test_decode_receipt_qr_decodes_a_perspective_distorted_qr_code():
     result = decode_receipt_qr(PERSPECTIVE_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
 def test_decode_receipt_qr_decodes_a_small_qr_code():
     result = decode_receipt_qr(SMALL_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
@@ -913,23 +915,245 @@ def test_decode_receipt_qr_decodes_a_qr_code_near_the_image_edge():
     # Not centered in its frame -- decode_receipt_qr must not implicitly
     # assume a tightly-cropped, centered QR.
     result = decode_receipt_qr(EDGE_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
 
 
-def test_decode_receipt_qr_falls_back_to_opencv_when_zxing_fails():
-    # SAMPLE_QR_PNG is independently decodable by cv2.QRCodeDetector on its
-    # own (verified separately) — patching zxing out here proves the
-    # opencv fallback stage is actually wired up and functional, not dead
-    # code, without needing an image that specifically defeats zxing.
-    with patch("apps.bot.qr.zxingcpp.read_barcodes", return_value=[]):
+def test_decode_receipt_qr_decodes_a_heic_photo():
+    # iPhones send HEIC when a receipt photo is attached "as-is" via the
+    # document (📎) path — apps.bot.handlers._looks_like_receipt_document
+    # must accept it (see test_looks_like_receipt_document below) and this
+    # module must actually be able to decode it.
+    import io
+
+    import pillow_heif
+    import qrcode
+
+    pillow_heif.register_heif_opener()
+
+    img = qrcode.make(RECEIPT_URL).convert("RGB").resize((600, 600), Image.NEAREST)
+    buf = io.BytesIO()
+    img.save(buf, format="HEIF")
+
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrResult)
+    assert result.value == RECEIPT_URL
+
+
+def test_decode_receipt_qr_decodes_a_webp_photo():
+    # WEBP, like PNG and HEIC, has no draft() implementation (Image.Image's
+    # base draft() is a documented no-op) -- confirms the draft() call added
+    # to _load_grayscale for the JPEG fast path doesn't disturb it.
+    import io
+
+    import qrcode
+
+    img = qrcode.make(RECEIPT_URL).convert("RGB").resize((600, 600), Image.NEAREST)
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP", lossless=True)
+
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrResult)
+    assert result.value == RECEIPT_URL
+
+
+@pytest.mark.parametrize("fmt", ["GIF", "BMP", "TIFF"])
+def test_decode_receipt_qr_decodes_formats_the_old_mime_allowlist_used_to_reject(fmt):
+    # These three all decode fine on the current decoder but were blocked
+    # from ever reaching it by the old exact-string MIME allowlist in
+    # handlers.py (image/gif, image/bmp, image/tiff weren't in it) -- a
+    # customer sending a screenshot in one of these formats was rejected for
+    # no reason. See _looks_like_receipt_document's comment in handlers.py.
+    import io
+
+    import qrcode
+
+    img = qrcode.make(RECEIPT_URL).convert("RGB").resize((600, 600), Image.NEAREST)
+    buf = io.BytesIO()
+    img.save(buf, format=fmt)
+
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrResult)
+    assert result.value == RECEIPT_URL
+
+
+_EPS_BYTES = b"%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 100 100\n%%EOF\n"
+
+
+def test_decode_receipt_qr_rejects_eps_without_invoking_ghostscript():
+    """Security-critical: Pillow's EPS plugin shells out to Ghostscript (a
+    well-known RCE surface) on load, but Image.open() alone -- before any
+    pixel decode -- succeeds and reports format="EPS" without invoking it.
+    apps/bot/qr.py deregisters the EPS plugin entirely at import time AND
+    _load_grayscale's format check runs before any pixel decode either way
+    -- this asserts the end result (Ghostscript never runs, decode fails
+    cleanly) rather than either mechanism individually, so it still catches
+    a regression if one of the two layers is ever weakened."""
+    with patch("subprocess.Popen", side_effect=AssertionError("Ghostscript was invoked")):
+        result = decode_receipt_qr(_EPS_BYTES)
+
+    assert isinstance(result, QrFailure)
+    assert result.reason == "unreadable_image"
+
+
+def test_eps_plugin_is_deregistered_at_import_time():
+    """Direct check of the deregistration itself (test_decode_receipt_qr_
+    rejects_eps_without_invoking_ghostscript above proves the end-to-end
+    behavior; this pins the specific mechanism, since apps.bot.qr's module
+    docstring calls out that the removal is only effective if Image.init()
+    has already run -- a fragile ordering worth pinning directly)."""
+    from PIL import Image
+
+    assert "EPS" not in Image.ID
+    assert "EPS" not in Image.OPEN
+    assert Image.EXTENSION.get(".eps") is None
+
+
+def test_decode_receipt_qr_rejects_a_format_outside_the_allowlist():
+    # PPM is a real format Pillow's preinit()-registered plugins can open
+    # (so this is exercising the format allowlist specifically, not just
+    # "Pillow couldn't identify the bytes at all" like the unreadable-bytes
+    # tests below) but it isn't one apps/bot/qr.py accepts.
+    import io
+
+    import qrcode
+
+    img = qrcode.make(RECEIPT_URL).convert("RGB").resize((600, 600), Image.NEAREST)
+    buf = io.BytesIO()
+    img.save(buf, format="PPM")
+
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrFailure)
+    assert result.reason == "unreadable_image"
+
+
+def test_load_grayscale_calls_draft_with_an_aspect_correct_target(monkeypatch):
+    """Regression test for the draft() target computation in
+    apps/bot/qr.py::_load_grayscale: it must be the aspect-ratio-preserving
+    downscaled size, e.g. (3000, 4000) for a 6000x8000 source, NOT the naive
+    (MAX_WORKING_SIDE, MAX_WORKING_SIDE) = (4000, 4000) -- the latter makes
+    Pillow refuse to downscale a non-square image at all (see that
+    docstring for why)."""
+    import io
+
+    from PIL import JpegImagePlugin
+
+    import apps.bot.qr as qr_module
+
+    # JpegImageFile overrides Image.Image's no-op draft() with the real
+    # implementation -- patching the base class wouldn't touch what
+    # Image.open() actually returns for a JPEG.
+    calls = []
+    real_draft = JpegImagePlugin.JpegImageFile.draft
+
+    def recording_draft(self, mode, size):
+        calls.append(size)
+        return real_draft(self, mode, size)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "draft", recording_draft)
+
+    img = Image.new("RGB", (6000, 8000), color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+
+    qr_module._load_grayscale(buf.getvalue())
+
+    assert calls, "draft() was never called"
+    assert calls[0] == (3000, 4000)
+
+
+def test_load_grayscale_downscales_a_large_jpeg_and_still_decodes():
+    """End-to-end: a 6000x8000 receipt photo (well under MAX_DECODE_PIXELS —
+    a normal high-resolution phone camera default now) must come out at
+    MAX_WORKING_SIDE resolution, and the QR on it must still decode --
+    proving the draft() fast path doesn't lose the payload."""
+    import io
+
+    import qrcode
+
+    import apps.bot.qr as qr_module
+
+    qr_img = qrcode.make(RECEIPT_URL).convert("RGB").resize((2400, 2400), Image.NEAREST)
+    canvas = Image.new("RGB", (6000, 8000), "white")
+    canvas.paste(qr_img, (1800, 5200))
+    buf = io.BytesIO()
+    canvas.save(buf, format="JPEG", quality=90)
+    data = buf.getvalue()
+
+    loaded = qr_module._load_grayscale(data)
+    assert loaded.gray.shape == (4000, 3000)  # (height, width)
+    assert loaded.source_size == (6000, 8000)  # (width, height), pre-downscale
+
+    result = decode_receipt_qr(data)
+    assert isinstance(result, QrResult)
+    assert result.value == RECEIPT_URL
+
+
+def test_load_grayscale_applies_exif_orientation_after_draft():
+    """Regression test: exif_transpose must still run, after draft() and
+    before the array conversion (see _load_grayscale's docstring -- this
+    method was moved once already, during the decompression-bomb reorder).
+
+    Asserting decode_receipt_qr succeeds would NOT catch a dropped
+    exif_transpose: zxing's own try_rotate already tolerates 90/270 degree
+    rotation, so a rotated-but-untransposed image can still decode. Instead
+    this asserts the array's own shape reflects the EXIF-corrected
+    orientation directly -- a decoder-independent check.
+
+    EXIF orientation 6 on a 300x200 (landscape) stored JPEG means the
+    correctly-displayed image is 200x300 (portrait); exif_transpose must
+    swap width/height to produce that."""
+    import io
+
+    import qrcode
+
+    import apps.bot.qr as qr_module
+
+    qr_img = qrcode.make(RECEIPT_URL).convert("RGB").resize((150, 150), Image.NEAREST)
+    canvas = Image.new("RGB", (300, 200), "white")  # stored landscape
+    canvas.paste(qr_img, (10, 10))
+
+    exif = Image.Exif()
+    exif[0x0112] = 6  # orientation: real display is rotated 90 from stored
+    buf = io.BytesIO()
+    canvas.save(buf, format="JPEG", exif=exif)
+    data = buf.getvalue()
+
+    loaded = qr_module._load_grayscale(data)
+    assert loaded.gray.shape[0] > loaded.gray.shape[1], (
+        "array is still landscape -- exif_transpose did not run "
+        f"(shape={loaded.gray.shape})"
+    )
+
+    result = decode_receipt_qr(data)
+    assert isinstance(result, QrResult)
+    assert result.value == RECEIPT_URL
+
+
+def test_decode_receipt_qr_tries_later_strategies_when_earlier_ones_find_nothing():
+    # Proves the preprocessing ladder actually falls through multiple
+    # strategies rather than only ever trying the first ("plain") one --
+    # zxing is forced to report nothing on every call except the last.
+    import apps.bot.qr as qr_module
+
+    real_read_barcodes = qr_module.zxingcpp.read_barcodes
+    calls = {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < len(qr_module._PREPROCESSORS):
+            return []
+        return real_read_barcodes(*args, **kwargs)
+
+    with patch("apps.bot.qr.zxingcpp.read_barcodes", side_effect=flaky):
         result = decode_receipt_qr(SAMPLE_QR_PNG)
-    assert result is not None
+
+    assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
-    assert result.decoder == "opencv"
+    assert calls["n"] == len(qr_module._PREPROCESSORS)
 
 
-def test_decode_receipt_qr_returns_none_for_an_image_with_no_qr_code():
+def test_decode_receipt_qr_returns_not_found_for_an_image_with_no_qr_code():
     # A valid, minimal 1x1 PNG (same fixture style as
     # apps/accounts/tests/test_me_api.py's TINY_PNG_BYTES) — a real image,
     # just not one that contains a QR code.
@@ -937,56 +1161,427 @@ def test_decode_receipt_qr_returns_none_for_an_image_with_no_qr_code():
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42Y"
         "AAAAASUVORK5CYII="
     )
-    assert decode_receipt_qr(tiny_png) is None
+    result = decode_receipt_qr(tiny_png)
+    assert isinstance(result, QrFailure)
+    assert result.reason == "not_found"
 
 
-def test_decode_receipt_qr_returns_none_for_non_image_bytes():
-    assert decode_receipt_qr(b"not an image at all") is None
+def test_decode_receipt_qr_returns_unreadable_for_non_image_bytes():
+    result = decode_receipt_qr(b"not an image at all")
+    assert isinstance(result, QrFailure)
+    assert result.reason == "unreadable_image"
 
 
 def test_decode_receipt_qr_rejects_images_over_the_pixel_ceiling(monkeypatch):
     """Regression test for audit finding M-5: decode_receipt_qr must refuse
-    to run its cv2 pipeline (including the 2x-upscale stage) on an image
-    over the intentional pixel ceiling, rather than relying incidentally on
-    Pillow's/Telegram's own unrelated size limits. The threshold is
-    monkeypatched down to something a test can cheaply generate — the
-    behavior under test is "rejects when over the configured ceiling", not
-    the specific production value of that ceiling."""
+    to decode an image over the intentional pixel ceiling rather than
+    relying incidentally on Pillow's/Telegram's own unrelated size limits.
+    The threshold is monkeypatched down to something a test can cheaply
+    generate — the behavior under test is "rejects when over the configured
+    ceiling", not the specific production value of that ceiling."""
     import io
-
-    from PIL import Image
 
     import apps.bot.qr as qr_module
 
-    monkeypatch.setattr(qr_module, "MAX_RECEIPT_IMAGE_PIXELS", 100 * 100)
+    monkeypatch.setattr(qr_module, "MAX_DECODE_PIXELS", 100 * 100)
 
     buf = io.BytesIO()
     Image.new("RGB", (200, 200), color="white").save(buf, format="PNG")
 
-    assert decode_receipt_qr(buf.getvalue()) is None
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrFailure)
+    assert result.reason == "image_too_large"
+
+
+def test_decode_receipt_qr_checks_the_pixel_ceiling_before_decoding(monkeypatch):
+    """The whole point of checking width*height up front (see
+    apps/bot/qr.py's _load_grayscale docstring) is to refuse an oversized
+    image BEFORE paying for a full pixel decode. Patch exif_transpose (the
+    first thing that would force a decode) to blow up if it's ever called,
+    and confirm an over-ceiling image is still rejected without it."""
+    import io
+
+    import apps.bot.qr as qr_module
+
+    monkeypatch.setattr(qr_module, "MAX_DECODE_PIXELS", 100 * 100)
+
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError("exif_transpose ran before the size check rejected the image")
+
+    monkeypatch.setattr(qr_module.ImageOps, "exif_transpose", _must_not_be_called)
+
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 200), color="white").save(buf, format="PNG")
+
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrFailure)
+    assert result.reason == "image_too_large"
 
 
 def test_decode_receipt_qr_still_decodes_images_under_the_pixel_ceiling():
     """The ceiling must not reject ordinary-sized real receipt photos —
     same real-QR fixture used by the other decode tests here, well under
-    the default MAX_RECEIPT_IMAGE_PIXELS."""
+    the default MAX_DECODE_PIXELS."""
     result = decode_receipt_qr(SAMPLE_QR_PNG)
-    assert result is not None
+    assert isinstance(result, QrResult)
+
+
+@pytest.mark.parametrize(
+    "mime_type,expected",
+    [
+        ("image/heic", True),
+        ("image/heif", True),
+        ("image/jpeg", True),
+        ("image/gif", True),  # not in the old exact-string allowlist -- now accepted
+        ("image/bmp", True),
+        ("image/tiff", True),
+        (None, True),  # some clients send no mime_type at all for an image
+        ("application/octet-stream", True),  # some clients send this for a perfectly normal image
+        ("application/pdf", False),
+        ("text/plain", False),
+        ("application/zip", False),
+    ],
+)
+def test_looks_like_receipt_document(mime_type, expected):
+    # Regression test for the switch away from an exact client-supplied MIME
+    # allowlist (see _looks_like_receipt_document's own comment in
+    # handlers.py): this pre-filter's only job now is to skip obviously
+    # irrelevant attachments cheaply, before download -- correctness is
+    # decided after download by apps.bot.qr's own format check.
+    from apps.bot.handlers import _looks_like_receipt_document
+
+    assert _looks_like_receipt_document(mime_type) is expected
+
+
+def test_octet_stream_document_with_valid_jpeg_bytes_is_accepted_end_to_end():
+    """Some clients declare application/octet-stream for a perfectly normal
+    JPEG (not hypothetical -- see _looks_like_receipt_document's comment).
+    Both halves must work together: the router-level pre-filter must let it
+    through, AND the handler must then decode it from the actual bytes, not
+    the declared (and here, useless) mime_type."""
+    import io
+
+    import qrcode
+
+    from apps.bot.handlers import _looks_like_receipt_document
+
+    assert _looks_like_receipt_document("application/octet-stream") is True
+
+    img = qrcode.make(RECEIPT_URL).convert("RGB").resize((600, 600), Image.NEAREST)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    message = _fake_receipt_message(image_bytes=buf.getvalue())
+
+    with patch("apps.bot.handlers.process_receipt_photo") as mocked_task:
+        _run_handle_receipt_image(message, upload_kind="document")
+
+    mocked_task.delay.assert_called_once()
+
+
+@pytest.mark.parametrize("language", ["uz", "en", "ru"])
+def test_receipt_failure_messages_are_distinct_per_reason(language):
+    """Regression test: each QrFailure.reason must map to its own text in
+    every language -- a customer whose photo was simply too small (reason=
+    not_found) shouldn't be told the same thing as one whose upload we
+    couldn't even open (reason=unreadable_image) or one whose file was over
+    the size ceiling (reason=image_too_large); each calls for different
+    customer action. receipt_untrusted_url is a separate failure mode
+    entirely (the QR decoded fine, but isn't a trusted receipt link) and
+    must also be distinct from all three."""
+    from apps.bot.i18n import t
+
+    messages = {
+        t(language, "receipt_qr_not_found"),
+        t(language, "receipt_image_too_large"),
+        t(language, "receipt_image_unreadable"),
+        t(language, "receipt_untrusted_url"),
+    }
+    assert len(messages) == 4
+
+
+def test_on_receipt_photo_downloads_the_largest_photo_size():
+    """Regression test: Telegram sends message.photo ordered smallest to
+    largest (a ~90px thumbnail first, the full-size version last). A
+    thumbnail can never contain a decodable QR no matter what the decoder
+    does, so on_receipt_photo must always hand _handle_receipt_image the
+    LAST entry -- message.photo[-1] -- never message.photo[0] or anything
+    else that could pick a smaller size.
+
+    No pytest-asyncio dependency in this project (and none needed for one
+    test) -- asyncio.run() inside a plain sync test is enough to drive a
+    single async handler call."""
+    import asyncio
+
+    from apps.bot import handlers as handlers_module
+
+    thumbnail = MagicMock(file_id="thumb_90px")
+    medium = MagicMock(file_id="medium_320px")
+    full_size = MagicMock(file_id="full_1280px")
+    message = MagicMock(photo=[thumbnail, medium, full_size])
+
+    with patch.object(handlers_module, "_handle_receipt_image", new=AsyncMock()) as mocked:
+        asyncio.run(
+            handlers_module.on_receipt_photo(message, tenant=MagicMock(), bot_row=MagicMock())
+        )
+
+    mocked.assert_awaited_once()
+    downloaded_file = mocked.await_args.args[-1]
+    assert downloaded_file is full_size
+
+
+def _fake_receipt_message(*, image_bytes: bytes):
+    """A minimal stand-in for an aiogram Message, just enough of it for
+    _handle_receipt_image: .from_user.id (bot_services lookups are mocked
+    out below, so its actual value doesn't matter), .bot.download(file) to
+    hand back the "downloaded" bytes, .answer() to swallow the reply,
+    .chat.id for the Celery .delay() call."""
+    buffer = MagicMock()
+    buffer.read.return_value = image_bytes
+    message = MagicMock()
+    message.chat.id = 555
+    message.bot.download = AsyncMock(return_value=buffer)
+    message.answer = AsyncMock()
+    return message
+
+
+def _run_handle_receipt_image(message, *, upload_kind):
+    """Drives _handle_receipt_image with bot_services' DB-backed lookups
+    mocked out. bot_services.get_customer_language/get_customer_by_telegram_id
+    both go through sync_to_async(thread_sensitive=True) -- under a bare
+    asyncio.run() (no ASGI request cycle, no pytest-asyncio in this project)
+    that thread doesn't reliably share the pytest-django test transaction,
+    so a real DB customer created in the test body isn't visible to it. What
+    these tests actually verify is the logging, not the DB lookup (that's
+    covered elsewhere, e.g. test_handle_receipt_check_data_* below) -- so
+    mocking the two lookups sidesteps the threading pitfall entirely rather
+    than fighting it."""
+    import asyncio
+
+    from apps.bot.handlers import _handle_receipt_image
+
+    tenant = MagicMock()
+    customer = MagicMock(id=7, language="uz")
+    with (
+        patch("apps.bot.handlers.bot_services.get_customer_language", return_value="uz"),
+        patch(
+            "apps.bot.handlers.bot_services.get_customer_by_telegram_id", return_value=customer
+        ),
+    ):
+        asyncio.run(
+            _handle_receipt_image(
+                message, tenant, MagicMock(id=1), MagicMock(), upload_kind=upload_kind
+            )
+        )
+
+
+def test_handle_receipt_image_logs_accepted_on_successful_decode(caplog):
+    message = _fake_receipt_message(image_bytes=SAMPLE_QR_PNG)
+
+    caplog.set_level("INFO", logger="apps.bot.handlers")
+    with patch("apps.bot.handlers.process_receipt_photo") as mocked_task:
+        _run_handle_receipt_image(message, upload_kind="photo")
+
+    mocked_task.delay.assert_called_once()
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_accepted")]
+    assert record.levelname == "INFO"
+    assert "upload_kind=photo" in record.message
+    assert "strategy=plain" in record.message
+    assert "size_px=" in record.message
+
+
+def test_handle_receipt_image_logs_rejection_at_warning_when_qr_not_found(caplog):
+    # A real 1x1 PNG with no QR code in it -- same fixture style used by
+    # test_decode_receipt_qr_returns_not_found_for_an_image_with_no_qr_code.
+    tiny_png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42Y"
+        "AAAAASUVORK5CYII="
+    )
+    message = _fake_receipt_message(image_bytes=tiny_png)
+
+    caplog.set_level("WARNING", logger="apps.bot.handlers")
+    _run_handle_receipt_image(message, upload_kind="photo")
+
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_rejected")]
+    assert record.levelname == "WARNING"
+    assert "upload_kind=photo" in record.message
+    assert "reason=not_found" in record.message
+
+
+@pytest.mark.parametrize(
+    "reason,expected_key",
+    [
+        ("image_too_large", "receipt_image_too_large"),
+        ("unreadable_image", "receipt_image_unreadable"),
+        ("not_found", "receipt_qr_not_found"),
+    ],
+)
+def test_handle_receipt_image_sends_the_reason_specific_message(reason, expected_key):
+    """Pins the QrFailure.reason -> i18n key mapping in _handle_receipt_image
+    itself, not just that the two texts differ (see
+    test_receipt_failure_messages_are_distinct_per_reason) -- this is what
+    would actually catch a future edit collapsing two reasons back onto one
+    message_key."""
+    from apps.bot.i18n import t
+    from apps.bot.qr import QrFailure
+
+    message = _fake_receipt_message(image_bytes=b"irrelevant -- decode_receipt_qr is mocked")
+
+    with patch(
+        "apps.bot.handlers.decode_receipt_qr",
+        return_value=QrFailure(reason=reason, detail="irrelevant"),
+    ):
+        _run_handle_receipt_image(message, upload_kind="photo")
+
+    message.answer.assert_awaited_once_with(t("uz", expected_key))
+
+
+def test_handle_receipt_image_logs_raw_value_when_check_url_is_untrusted(caplog):
+    import io
+
+    import qrcode
+
+    untrusted_payload = "https://not-ofd.example.com/epi?t=X&r=1&c=2&s=3"
+    qr_img = qrcode.make(untrusted_payload).convert("RGB")
+    buf = io.BytesIO()
+    qr_img.save(buf, format="PNG")
+    message = _fake_receipt_message(image_bytes=buf.getvalue())
+
+    caplog.set_level("WARNING", logger="apps.bot.handlers")
+    _run_handle_receipt_image(message, upload_kind="document")
+
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_untrusted")]
+    assert record.levelname == "WARNING"
+    assert "upload_kind=document" in record.message
+    assert untrusted_payload in record.message
+
+
+def test_handle_receipt_image_truncates_raw_value_before_repr_not_after(caplog):
+    """Regression test for an ordering bug that's easy to reintroduce:
+    apps/bot/handlers.py must log repr(qr_result.value[:200]), not
+    repr(qr_result.value)[:200]. Both look similar; only the first is
+    parseable. repr() wraps a string in quotes and escapes it -- slicing
+    the ALREADY-repr'd text can cut the closing quote off entirely, handing
+    apps/bot/management/commands/receipt_qr_report.py a truncated Python
+    literal that ast.literal_eval can't parse (a SyntaxError, verified
+    separately), i.e. every long untrusted payload -- exactly the
+    attacker-controlled input this truncation exists to handle safely --
+    would silently break the report instead of just being truncated.
+
+    The payload here is deliberately both over 200 chars AND contains an
+    embedded newline, so this also confirms truncation and the newline-safe
+    %r encoding compose correctly, not just each in isolation."""
+    import ast
+
+    from apps.bot.qr import QrResult
+
+    long_payload = "https://not-ofd.example.com/epi?" + ("x" * 50 + "\n") * 5
+    assert len(long_payload) > 200
+
+    message = _fake_receipt_message(image_bytes=b"irrelevant -- decode_receipt_qr is mocked")
+
+    caplog.set_level("WARNING", logger="apps.bot.handlers")
+    with patch(
+        "apps.bot.handlers.decode_receipt_qr",
+        return_value=QrResult(value=long_payload, strategy="plain", size_px=100),
+    ):
+        _run_handle_receipt_image(message, upload_kind="photo")
+
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_untrusted")]
+    # The logged line is exactly one physical line -- no raw newline leaked
+    # into it (repr() escapes it as the two characters "\n" instead).
+    assert "\n" not in record.message
+
+    raw_value_field = record.message.split("raw_value=", 1)[1]
+    decoded = ast.literal_eval(raw_value_field)  # raises SyntaxError on the truncate-after-repr bug
+    assert decoded == long_payload[:200]
+
+
+def test_decode_receipt_qr_logs_success_fields(caplog):
+    caplog.set_level("INFO", logger="apps.bot.qr")
+    result = decode_receipt_qr(SAMPLE_QR_PNG)
+    assert isinstance(result, QrResult)
+
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_decode_success")]
+    assert record.levelname == "INFO"
+    assert f"strategy={result.strategy}" in record.message
+    assert f"size_px={result.size_px}" in record.message
+    assert "source=" in record.message
+    assert "frame=" in record.message
+
+
+@pytest.mark.parametrize(
+    "image_bytes,expected_reason",
+    [
+        (b"not an image at all", "unreadable_image"),
+        (
+            base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42Y"
+                "AAAAASUVORK5CYII="
+            ),
+            "not_found",
+        ),
+    ],
+)
+def test_decode_receipt_qr_logs_failures_at_warning(caplog, image_bytes, expected_reason):
+    caplog.set_level("WARNING", logger="apps.bot.qr")
+    result = decode_receipt_qr(image_bytes)
+    assert isinstance(result, QrFailure)
+    assert result.reason == expected_reason
+
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_decode_failed")]
+    assert record.levelname == "WARNING"
+    assert f"reason={expected_reason}" in record.message
+
+
+def test_decode_receipt_qr_logs_image_too_large_at_warning(monkeypatch, caplog):
+    import io
+
+    import apps.bot.qr as qr_module
+
+    monkeypatch.setattr(qr_module, "MAX_DECODE_PIXELS", 100 * 100)
+    buf = io.BytesIO()
+    Image.new("RGB", (200, 200), color="white").save(buf, format="PNG")
+
+    caplog.set_level("WARNING", logger="apps.bot.qr")
+    result = decode_receipt_qr(buf.getvalue())
+    assert isinstance(result, QrFailure)
+    assert result.reason == "image_too_large"
+
+    [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_decode_failed")]
+    assert record.levelname == "WARNING"
+    assert "reason=image_too_large" in record.message
 
 
 @pytest.mark.parametrize(
     "url,expected",
     [
-        ("https://ofd.soliq.uz/check?t=X&r=1&c=2&s=3", True),
-        ("http://ofd.soliq.uz/check?t=X", False),  # wrong scheme
-        ("https://evil.example.com/check?t=X", False),  # wrong host
-        ("https://ofd.soliq.uz.evil.com/check?t=X", False),  # lookalike host
-        ("https://ofd.soliq.uz/other-page", False),  # wrong path
+        ("https://ofd.soliq.uz/epi?t=X&r=1&c=2&s=3", True),  # real fiscal QR path
+        ("https://ofd.soliq.uz/check?t=X&r=1&c=2&s=3", True),  # alternate integration path
+        ("http://ofd.soliq.uz/epi?t=X&r=1&c=2&s=3", False),  # wrong scheme
+        ("https://evil.example.com/epi?t=X&r=1&c=2&s=3", False),  # wrong host
+        ("https://ofd.soliq.uz.evil.com/epi?t=X&r=1&c=2&s=3", False),  # lookalike host
+        ("https://ofd.soliq.uz@evil.example/epi?t=X&r=1&c=2&s=3", False),  # userinfo trick
+        ("https://ofd.soliq.uz:8443/epi?t=X&r=1&c=2&s=3", False),  # non-default port
+        ("https://ofd.soliq.uz/other-page?t=X&r=1&c=2&s=3", False),  # wrong path
+        ("https://ofd.soliq.uz/epi?t=X&r=1&c=2", False),  # missing required param
+        ("https://ofd.soliq.uz/epi?t=X&t=Y&r=1&c=2&s=3", False),  # duplicated param
+        ("https://ofd.soliq.uz/epi?t=<script>&r=1&c=2&s=3", False),  # non-alnum param
         ("not a url", False),
     ],
 )
 def test_is_trusted_check_url(url, expected):
     assert is_trusted_check_url(url) is expected
+
+
+def test_normalize_check_url_rebuilds_rather_than_passes_through():
+    # The returned string is reconstructed from validated components, not
+    # the raw QR payload verbatim -- this is what actually closes the
+    # userinfo/duplicate-param/odd-port gaps a prefix check leaves open.
+    from apps.bot.qr import normalize_check_url
+
+    raw = "https://ofd.soliq.uz:443/epi/?t=EZ01&r=2121&c=20220929013159&s=420808230750"
+    normalized = normalize_check_url(raw)
+    assert normalized == "https://ofd.soliq.uz/epi?t=EZ01&r=2121&c=20220929013159&s=420808230750"
 
 
 def _check_data(
