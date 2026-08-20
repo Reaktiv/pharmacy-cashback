@@ -852,7 +852,7 @@ def test_decode_receipt_qr_decodes_a_real_qr_code():
     result = decode_receipt_qr(SAMPLE_QR_PNG)
     assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
-    assert result.strategy == "plain"
+    assert result.strategy == "qreader"
     assert result.size_px > 0
 
 
@@ -1094,11 +1094,12 @@ def test_load_grayscale_applies_exif_orientation_after_draft():
     before the array conversion (see _load_grayscale's docstring -- this
     method was moved once already, during the decompression-bomb reorder).
 
-    Asserting decode_receipt_qr succeeds would NOT catch a dropped
-    exif_transpose: zxing's own try_rotate already tolerates 90/270 degree
-    rotation, so a rotated-but-untransposed image can still decode. Instead
-    this asserts the array's own shape reflects the EXIF-corrected
-    orientation directly -- a decoder-independent check.
+    Asserting decode_receipt_qr succeeds would NOT reliably catch a dropped
+    exif_transpose: qreader's YOLO detector and pyzbar's own rotation
+    handling can both tolerate a fair amount of untransposed rotation, so a
+    rotated-but-untransposed image can still happen to decode. Instead this
+    asserts the array's own shape reflects the EXIF-corrected orientation
+    directly -- a decoder-independent check.
 
     EXIF orientation 6 on a 300x200 (landscape) stored JPEG means the
     correctly-displayed image is 200x300 (portrait); exif_transpose must
@@ -1130,27 +1131,30 @@ def test_load_grayscale_applies_exif_orientation_after_draft():
     assert result.value == RECEIPT_URL
 
 
-def test_decode_receipt_qr_tries_later_strategies_when_earlier_ones_find_nothing():
-    # Proves the preprocessing ladder actually falls through multiple
-    # strategies rather than only ever trying the first ("plain") one --
-    # zxing is forced to report nothing on every call except the last.
+def test_decode_receipt_qr_prefers_the_highest_confidence_decoded_detection():
+    # decode_receipt_qr must not just take detections[0] -- given several
+    # detections that all decoded to *different* values, it must return the
+    # one the detector is most confident about, not just the first in array
+    # order. A pure unit test against a stubbed QReader, independent of the
+    # real model's own behavior (that's covered by the other decode tests).
     import apps.bot.qr as qr_module
 
-    real_read_barcodes = qr_module.zxingcpp.read_barcodes
-    calls = {"n": 0}
+    class _StubQReader:
+        def detect_and_decode(self, image, return_detections=False, is_bgr=False):
+            values = ("low-confidence-value", RECEIPT_URL, "mid-confidence-value")
+            detections = (
+                {"confidence": 0.20, "wh": (100.0, 100.0)},
+                {"confidence": 0.95, "wh": (150.0, 140.0)},
+                {"confidence": 0.60, "wh": (120.0, 110.0)},
+            )
+            return (values, detections) if return_detections else values
 
-    def flaky(*args, **kwargs):
-        calls["n"] += 1
-        if calls["n"] < len(qr_module._PREPROCESSORS):
-            return []
-        return real_read_barcodes(*args, **kwargs)
-
-    with patch("apps.bot.qr.zxingcpp.read_barcodes", side_effect=flaky):
+    with patch.object(qr_module, "_get_qreader", return_value=_StubQReader()):
         result = decode_receipt_qr(SAMPLE_QR_PNG)
 
     assert isinstance(result, QrResult)
     assert result.value == RECEIPT_URL
-    assert calls["n"] == len(qr_module._PREPROCESSORS)
+    assert result.size_px == 150
 
 
 def test_decode_receipt_qr_returns_not_found_for_an_image_with_no_qr_code():
@@ -1385,7 +1389,7 @@ def test_handle_receipt_image_logs_accepted_on_successful_decode(caplog):
     [record] = [r for r in caplog.records if r.message.startswith("receipt_qr_accepted")]
     assert record.levelname == "INFO"
     assert "upload_kind=photo" in record.message
-    assert "strategy=plain" in record.message
+    assert "strategy=qreader" in record.message
     assert "size_px=" in record.message
 
 

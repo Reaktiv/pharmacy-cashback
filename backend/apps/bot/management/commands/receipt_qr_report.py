@@ -13,7 +13,7 @@ just going unformatted.
 
 One line looks like:
     2026-08-18T13:05:07.536Z INFO apps.bot.handlers receipt_qr_accepted \
-        upload_kind=photo strategy=plain size_px=145
+        upload_kind=photo strategy=qreader size_px=145
 
 _LINE_RE uses re.search rather than re.match specifically so a
 `docker compose logs` service-name prefix ("web-1  | ...") ahead of the

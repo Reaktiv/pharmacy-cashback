@@ -4,30 +4,29 @@ Usage (from anywhere, no Django setup needed — apps.bot.qr is a pure module):
     python backend/apps/bot/diagnose_receipt.py chek1.jpg chek2.heic ...
 
 Ask a customer whose receipt failed to forward you the original image, drop
-it here, and this prints exactly which stage broke and what to change. It
-runs the same ladder as apps/bot/qr.py but reports every step instead of the
-first hit.
+it here, and this prints every detection qreader found (confidence, bbox
+size, whether pyzbar could decode that crop) instead of just the first hit
+decode_receipt_qr itself stops at.
 """
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image, ImageOps  # noqa: E402
 
 from apps.bot.qr import (  # noqa: E402
-    _PREPROCESSORS,
     HEIF_SUPPORTED,
     MIN_USABLE_QR_PX,
-    _qr_size,
-    _read,
+    _get_qreader,
+    _QreaderDetectAndDecodeResult,
     decode_receipt_qr,
     normalize_check_url,
 )
@@ -65,47 +64,44 @@ def diagnose(path: Path) -> None:
             print(f"  {YELLOW}hint: pip install pillow-heif (iPhone uploads are HEIC){RESET}")
         return
 
-    # --- stage 2: which preprocessing recovers the code?
-    print(f"\n{DIM}decode strategies{RESET}")
-    found = None
-    for name, prep in _PREPROCESSORS:
-        try:
-            hits = _read(prep(gray))
-        except Exception as exc:
-            print(f"  {name:<12} {RED}error{RESET} {type(exc).__name__}: {exc}")
-            continue
-        if hits:
-            size = _qr_size(hits[0]) // (2 if name == "upscale2x" else 1)
-            print(f"  {name:<12} {mark(True)}  {len(hits)} code(s), ~{size}px")
-            found = found or (name, hits[0], size)
+    # --- stage 2: what does qreader's YOLO detector find, and does pyzbar
+    # decode what it crops out?
+    print(f"\n{DIM}qreader detections{RESET}")
+    decoded_values, detections = cast(
+        _QreaderDetectAndDecodeResult,
+        _get_qreader().detect_and_decode(image=gray, return_detections=True),
+    )
+    best: tuple[float, str] | None = None
+    if not detections:
+        print(f"  {DIM}no QR-shaped region found in the frame{RESET}")
+    for i, (detection, value) in enumerate(zip(detections, decoded_values, strict=True)):
+        confidence = detection["confidence"]
+        w_box, h_box = detection["wh"]
+        size = int(max(w_box, h_box))
+        if value:
+            print(f"  #{i} conf={confidence:.2f} ~{size}px {mark(True)}  decoded")
+            if best is None or confidence > best[0]:
+                best = (confidence, value)
         else:
-            print(f"  {name:<12} {DIM}nothing{RESET}")
+            print(f"  #{i} conf={confidence:.2f} ~{size}px {mark(False)}  pyzbar failed")
 
-    # OpenCV's own detector is shown for comparison only — it was dropped
-    # from apps/bot/qr.py's production ladder (see that module's docstring):
-    # against realistic phone photos it never recovered a code zxing missed.
-    try:
-        txt, _, _ = cv2.QRCodeDetector().detectAndDecode(gray)
-        print(f"  {'opencv':<12} {DIM}{'found' if txt else 'nothing'} (reference only){RESET}")
-    except cv2.error:
-        print(f"  {'opencv':<12} {DIM}error (reference only){RESET}")
-
-    if not found:
-        print(f"\n{RED}No QR found.{RESET}")
+    if best is None:
+        print(f"\n{RED}No QR decoded.{RESET}")
         print(f"  image is {gray.shape[1]}x{gray.shape[0]}")
         print("  Most common cause: the QR is too small in the frame. A receipt QR is")
         print(f"  ~45 modules wide and needs >= {MIN_USABLE_QR_PX}px to decode, so it must fill")
         print("  roughly 10% of the image width. If the customer photographed the whole")
         print("  receipt and Telegram then downscaled it to 1280px, the QR arrives at")
         print("  ~50-60px and is unrecoverable — see apps/bot/qr.py's module docstring.")
+        print("  If qreader found zero detections at all (not even a failed-to-decode")
+        print("  one), the YOLO model itself didn't recognize a QR-like region — that's")
+        print("  a different failure mode than pyzbar failing on a found-but-unreadable")
+        print("  crop, and no amount of pyzbar-side preprocessing would have helped.")
         return
 
-    name, barcode, size = found
-    value = barcode.text.strip()
+    confidence, value = best
     print(f"\nQR payload           : {value}")
-    print(f"recovered by         : {name}, ~{size}px on a side")
-    if size and size < MIN_USABLE_QR_PX * 1.3:
-        print(f"  {YELLOW}marginal size — this one decoded, but similar photos will not{RESET}")
+    print(f"recovered at         : confidence={confidence:.2f}")
 
     # --- stage 3: does it survive check-URL validation?
     normalized = normalize_check_url(value)

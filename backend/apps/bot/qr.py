@@ -2,27 +2,31 @@
 apps/bot/tasks.py::process_receipt_photo). Pure sync, no aiogram — a
 customer's photo bytes come in, a check URL (or nothing) comes out.
 
-Rewritten after a real-photo simulation (perspective, uneven light, blur,
-JPEG re-encode) isolated two things that mattered far more than decoder
-choice:
+Detector: qreader (github.com/Eric-Canas/qreader). It is a two-stage
+pipeline — a YOLOv8 model (via the qrdet package, PyTorch) first *finds* the
+QR in the frame (bounding polygon, confidence), crops and deskews that
+region, and only then hands the crop to pyzbar for the actual pixel decode.
+That second stage is a real constraint worth being explicit about: the
+decoder underneath is pyzbar, the same library this module previously
+dropped (see git history: "Harden receipt QR decoding: zxing-cpp + OpenCV
+fallback") after it failed on real, blurry customer photos and was replaced
+with zxing-cpp. Swapping back to a pyzbar-based decoder is a deliberate,
+informed choice, on the bet that YOLO's crop/deskeving recovers cases a
+blind preprocessing ladder over the *whole frame* missed — rotation,
+perspective skew, and a QR that isn't the dominant thing in the photo — even
+though it does nothing for a QR that's simply too small or too motion-blurred
+to resolve at the pixel level; see MIN_USABLE_QR_PX below, which is a
+property of the photo, not of whichever decoder reads it.
 
-1. Telegram's "photo" pipeline downsizes every upload to ~1280px on the long
-   side. A receipt QR is ~45 modules across including its quiet zone, and
-   zxing needs roughly 2px/module, so anything under ~90px on a side is
-   unrecoverable no matter what preprocessing runs on it. A customer who
-   photographs the *whole receipt* puts the QR at well under that once
-   Telegram is done resizing — no amount of decoder cleverness fixes a photo
-   sent through the wrong upload path. The "document" (📎 file) path skips
-   that resize entirely, which is why apps/bot/i18n.py's receipt_ask_photo
-   string leads with "get close to the QR code" and offers the file path as
-   the fallback.
-
-2. GlobalHistogram binarization and the OpenCV detector were dropped from
-   the hot path: against realistic phone photos they never recovered a code
-   plain zxing (LocalAverage) had already missed, so they were pure CPU cost
-   with no recovery benefit. The preprocessing ladder below (plain →
-   upscale → unsharp → adaptive-threshold) is the set that measurably helped
-   in that same testing.
+There is no local preprocessing ladder here anymore (plain/upscale/unsharp/
+adaptive-threshold, previously tuned around zxing's behavior) — qreader runs
+its own multi-scale, multi-correction retry internally (see its
+_decode_qr_zbar), and stacking a second, differently-tuned ladder in front
+of a detector that does its own would mostly just cost CPU. Losing
+per-strategy attribution is the trade for that simplicity: QrResult.strategy
+is now always "qreader" (previously "plain"/"upscale2x"/"unsharp"/
+"adaptive") — see apps/bot/diagnose_receipt.py for per-detection diagnostics
+(confidence, bbox size, decode outcome) instead.
 
 decode_receipt_qr reports *why* it failed (QrFailure.reason) and, on
 success, how large the QR was in the source frame (QrResult.size_px) — the
@@ -34,15 +38,33 @@ from __future__ import annotations
 
 import io
 import logging
-from collections.abc import Callable
+import threading
 from dataclasses import dataclass
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict, cast
 from urllib.parse import parse_qs, urlencode, urlparse
 
-import cv2
 import numpy as np
-import zxingcpp
 from PIL import Image, ImageOps
+from qreader import QReader
+
+
+# qreader ships no py.typed marker and detect_and_decode's own signature
+# declares a bare typing.Union of its return_detections=True and =False
+# shapes with no overload keyed to that literal, so mypy can't narrow it —
+# every call site that passes return_detections=True casts to this alias
+# instead. QReader.detect's docstring lists many more keys (bbox_xyxy,
+# cxcy, polygon_xy, quad_xy, padded_quad_xy, plus each key's "n"
+# (normalized) variant) than this TypedDict declares — only "confidence"
+# and "wh" are actually read here, and a TypedDict only constrains what you
+# may access through it, not what keys the real dict is allowed to have.
+class _QreaderDetection(TypedDict):
+    confidence: float
+    wh: tuple[float, float]
+
+
+_QreaderDetectAndDecodeResult = tuple[
+    tuple[str | None, ...], tuple[_QreaderDetection, ...]
+]
 
 logger = logging.getLogger(__name__)
 
@@ -122,17 +144,44 @@ class _UnsupportedImageFormat(Exception):
 MAX_DECODE_PIXELS = 80_000_000
 MAX_WORKING_SIDE = 4000
 
-# A receipt QR is ~45 modules across including its quiet zone; zxing needs
-# roughly 2 image pixels per module, so anything under ~90px on a side is
-# unrecoverable no matter how much preprocessing is thrown at it (see module
-# docstring). Not used to gate decode_receipt_qr itself — zxing already
-# fails on its own below this size — but reported by QrResult.size_px and
-# used by diagnose_receipt.py to explain *why* a given photo failed.
+# A receipt QR is ~45 modules across including its quiet zone; a module
+# needs roughly 2 image pixels to survive binarization, so ~90px on a side
+# is the rough floor a *plain* decoder needs. qreader's YOLO crop-and-
+# upscale step measurably pushes this lower in practice — a clean synthetic
+# 37px QR decoded fine in testing — so this is deliberately not used to gate
+# decode_receipt_qr itself; it's a conservative diagnostic heuristic only,
+# reported via QrResult.size_px and used by diagnose_receipt.py to flag a
+# photo as "marginal" even when it happened to decode.
 MIN_USABLE_QR_PX = 90
 
-_ZXING_FORMATS = zxingcpp.BarcodeFormats(
-    (zxingcpp.BarcodeFormat.QRCode, zxingcpp.BarcodeFormat.MicroQRCode)
-)
+# Constructing QReader() loads a PyTorch/YOLO model into memory — a
+# multi-second, ~hundreds-of-MB-RSS cost — so it happens lazily, on first
+# use, not at import time: a uvicorn worker (config/asgi.py runs
+# --workers 3) that never handles a receipt photo never pays it, and one
+# that does pays it exactly once. model_size="s" (small) is qreader's own
+# default and recommendation — "n" is faster but measurably less accurate,
+# "m"/"l" cost more CPU time per photo for accuracy this model doesn't need
+# (a receipt QR is a clean, high-contrast printed code, not a QR "in the
+# wild" at an odd angle on a curved surface, which is qrdet's harder target
+# case). See the Dockerfile for how the weights are baked into the image at
+# build time so this lazy load never needs network access at runtime.
+_qreader_lock = threading.Lock()
+_qreader_instance: QReader | None = None
+
+
+def _get_qreader() -> QReader:
+    """Returns the shared, process-wide QReader instance, constructing it on
+    first call. apps/bot/handlers.py invokes decode_receipt_qr via
+    sync_to_async(..., thread_sensitive=True), so two customers' photos
+    landing on a cold worker at nearly the same moment both reach this
+    function — the lock (checked-locked-checked) ensures only one of them
+    actually constructs (and loads) the model."""
+    global _qreader_instance
+    if _qreader_instance is None:
+        with _qreader_lock:
+            if _qreader_instance is None:
+                _qreader_instance = QReader(model_size="s")
+    return _qreader_instance
 
 
 @dataclass(frozen=True)
@@ -215,11 +264,12 @@ def _load_grayscale(image_bytes: bytes) -> _LoadedImage:
     img.draft("L", (round(w * draft_ratio), round(h * draft_ratio)))
 
     # Phones record orientation in EXIF instead of rotating pixels. Pillow
-    # does not apply it automatically; zxing tolerates 90/270 rotation but
-    # not every skew, so this still matters even with try_rotate=True below.
-    # Must run after draft() (draft is only effective before the first pixel
-    # load, and exif_transpose forces that load) and before the array
-    # conversion (so the rotation is baked into the pixels zxing sees).
+    # does not apply it automatically, and a customer's receipt is just as
+    # often photographed in portrait as landscape — this must run
+    # regardless of decoder. Must run after draft() (draft is only
+    # effective before the first pixel load, and exif_transpose forces that
+    # load) and before the array conversion (so the rotation is baked into
+    # the pixels the decoder sees).
     img = ImageOps.exif_transpose(img)
     img = img.convert("L")
 
@@ -234,56 +284,7 @@ def _load_grayscale(image_bytes: bytes) -> _LoadedImage:
     return _LoadedImage(gray=np.asarray(img, dtype=np.uint8), source_size=source_size)
 
 
-# ----------------------------------------------------------------- strategies
-
-
-def _plain(g: np.ndarray) -> np.ndarray:
-    return g
-
-
-def _upscale2x(g: np.ndarray) -> np.ndarray:
-    return cv2.resize(g, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-
-
-def _unsharp(g: np.ndarray) -> np.ndarray:
-    blur = cv2.GaussianBlur(g, (0, 0), 3)
-    return cv2.addWeighted(g, 1.8, blur, -0.8, 0)
-
-
-def _adaptive(g: np.ndarray) -> np.ndarray:
-    return cv2.adaptiveThreshold(
-        g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5
-    )
-
-
-# Ordered cheapest-first; each is only reached if the previous found nothing.
-_PREPROCESSORS: list[tuple[str, Callable[[np.ndarray], np.ndarray]]] = [
-    ("plain", _plain),
-    ("upscale2x", _upscale2x),
-    ("unsharp", _unsharp),
-    ("adaptive", _adaptive),
-]
-
-
-def _read(g: np.ndarray) -> list:
-    return zxingcpp.read_barcodes(
-        g,
-        formats=_ZXING_FORMATS,
-        try_rotate=True,
-        try_downscale=True,
-        try_invert=True,
-        binarizer=zxingcpp.Binarizer.LocalAverage,
-    )
-
-
-def _qr_size(barcode) -> int:
-    try:
-        p = barcode.position
-        xs = [p.top_left.x, p.top_right.x, p.bottom_right.x, p.bottom_left.x]
-        ys = [p.top_left.y, p.top_right.y, p.bottom_right.y, p.bottom_left.y]
-        return int(max(max(xs) - min(xs), max(ys) - min(ys)))
-    except Exception:
-        return 0
+# ------------------------------------------------------------------- decoding
 
 
 def decode_receipt_qr(image_bytes: bytes) -> QrResult | QrFailure:
@@ -312,38 +313,59 @@ def decode_receipt_qr(image_bytes: bytes) -> QrResult | QrFailure:
         logger.warning("receipt_qr_decode_failed reason=unreadable_image detail=%s", detail)
         return QrFailure("unreadable_image", detail)
 
-    for name, prep in _PREPROCESSORS:
-        try:
-            candidates = _read(prep(gray))
-        except Exception as exc:  # a preprocessor failing must not kill the request
-            logger.debug("qr strategy %s raised: %s", name, exc)
-            continue
-        for barcode in candidates:
-            if not barcode.text:
-                continue
-            size = _qr_size(barcode)
-            # 2x-upscaled coordinates are in the upscaled frame; report source px.
-            if name == "upscale2x":
-                size //= 2
-            logger.info(
-                "receipt_qr_decode_success strategy=%s size_px=%d source=%dx%d frame=%dx%d",
-                name,
-                size,
-                source_size[0],
-                source_size[1],
-                gray.shape[1],
-                gray.shape[0],
-            )
-            return QrResult(value=barcode.text.strip(), strategy=name, size_px=size)
+    # qreader accepts a grayscale (H, W) array directly — its own
+    # detect()/_prepare_input repeats it to 3 channels for the YOLO model
+    # internally; the pyzbar decode step underneath also works directly on
+    # 2D input. Nothing here needs its own RGB conversion.
+    try:
+        decoded_values, detections = cast(
+            _QreaderDetectAndDecodeResult,
+            _get_qreader().detect_and_decode(image=gray, return_detections=True),
+        )
+    except Exception as exc:  # a detector/decoder crash must not kill the request
+        detail = f"qreader raised {type(exc).__name__}: {exc}"
+        logger.warning(
+            "receipt_qr_decode_failed reason=not_found detail=%s source=%dx%d",
+            detail,
+            source_size[0],
+            source_size[1],
+        )
+        return QrFailure("not_found", detail)
 
-    detail = f"tried {len(_PREPROCESSORS)} strategies on {gray.shape[1]}x{gray.shape[0]}"
-    logger.warning(
-        "receipt_qr_decode_failed reason=not_found detail=%s source=%dx%d",
-        detail,
+    # detect_and_decode returns one (possibly-None) decoded string per
+    # detection, in the same order — a receipt photo can contain more than
+    # one QR-shaped pattern (a barcode misclassified, packaging in the
+    # background), so among the ones that actually decoded, prefer the
+    # detector's highest-confidence match rather than just the first.
+    hits = [
+        (detection, value)
+        for detection, value in zip(detections, decoded_values, strict=True)
+        if value
+    ]
+    if not hits:
+        detail = (
+            f"{len(detections)} detection(s), 0 decoded, frame {gray.shape[1]}x{gray.shape[0]}"
+        )
+        logger.warning(
+            "receipt_qr_decode_failed reason=not_found detail=%s source=%dx%d",
+            detail,
+            source_size[0],
+            source_size[1],
+        )
+        return QrFailure("not_found", detail)
+
+    detection, value = max(hits, key=lambda pair: pair[0]["confidence"])
+    w, h = detection["wh"]
+    size = int(max(w, h))
+    logger.info(
+        "receipt_qr_decode_success strategy=qreader size_px=%d source=%dx%d frame=%dx%d",
+        size,
         source_size[0],
         source_size[1],
+        gray.shape[1],
+        gray.shape[0],
     )
-    return QrFailure("not_found", detail)
+    return QrResult(value=value.strip(), strategy="qreader", size_px=size)
 
 
 # ------------------------------------------------------------ URL validation
