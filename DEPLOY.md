@@ -85,7 +85,33 @@ POSTGRES_PASSWORD=CHANGE_ME
 REDIS_URL=redis://redis:6379/0
 
 PUBLIC_BASE_URL=https://your-domain.com
+
+# Required if this server is NOT hosted in Uzbekistan. ofd.soliq.uz (the
+# fiscal receipt lookup apps/bot/tasks.py's Playwright browser calls)
+# silently drops connections from foreign IPs at the TCP handshake —
+# confirmed by hand: a raw TCP connect and curl both time out from a
+# France-hosted VPS while the same URL responds in ~20ms from an Uzbek ISP,
+# and general internet access from that same VPS is otherwise fine (so
+# it's specifically ofd.soliq.uz blocking the server's IP/ASN, not a
+# broken network). Point this at an Uzbekistan-based HTTP/SOCKS5 proxy —
+# only this one outbound call is routed through it, nothing else the app
+# does. Leave blank if the server itself already has an Uzbek IP (or
+# reachability is otherwise confirmed — see the curl test below).
+OFD_PROXY_URL=
+OFD_PROXY_USERNAME=
+OFD_PROXY_PASSWORD=
 ```
+
+Before going live, confirm the server can actually reach ofd.soliq.uz —
+this fails silently otherwise (the customer just sees "chekni tekshirib
+bo'lmadi", indistinguishable from any other transient failure):
+
+```bash
+curl -s -o /dev/null -w '%{http_code} in %{time_total}s\n' --max-time 10 https://ofd.soliq.uz/
+```
+
+`000` / a 10s timeout means the server's IP is blocked and `OFD_PROXY_URL`
+above is required; a fast `200` (or any real HTTP status) means it isn't.
 
 Generate the two secrets on the server itself (needs Python — either
 `python3` from the OS, or skip and generate them locally and paste in):

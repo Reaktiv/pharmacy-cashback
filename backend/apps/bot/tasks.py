@@ -56,9 +56,27 @@ async def _fetch_receipt_via_playwright(check_url: str) -> dict | None:
         except Exception:
             return
 
+    # ofd.soliq.uz silently drops connections from outside Uzbekistan
+    # (verified: a raw TCP connect from a France-hosted server times out at
+    # the handshake — this isn't the site being slow or anti-bot-challenging
+    # a headless browser, the SYN itself never gets a response). A server
+    # hosted outside Uzbekistan needs an Uzbek egress point for this one
+    # call; see config.settings.OFD_PROXY_URL for the env var this reads.
+    # Playwright's browser-level proxy applies to every request the browser
+    # makes, which is fine here — this browser instance exists solely to
+    # load check_url, nothing else runs through it.
+    launch_kwargs: dict = {"headless": True}
+    if settings.OFD_PROXY_URL:
+        proxy: dict = {"server": settings.OFD_PROXY_URL}
+        if settings.OFD_PROXY_USERNAME:
+            proxy["username"] = settings.OFD_PROXY_USERNAME
+        if settings.OFD_PROXY_PASSWORD:
+            proxy["password"] = settings.OFD_PROXY_PASSWORD
+        launch_kwargs["proxy"] = proxy
+
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+            browser = await p.chromium.launch(**launch_kwargs)
             try:
                 context = await browser.new_context(
                     user_agent=(

@@ -55,6 +55,24 @@ CACHES = {
 # requires HTTPS, so local dev needs a tunnel (e.g. ngrok) pointed at this host.
 PUBLIC_BASE_URL = env("PUBLIC_BASE_URL", default="https://example.com")
 
+# apps.bot.tasks._fetch_receipt_via_playwright's only consumer:
+# ofd.soliq.uz (O'zbekiston's fiscal receipt lookup) silently drops TCP
+# connections from outside Uzbekistan — confirmed by hand (curl/raw TCP
+# connect from a France-hosted VPS times out at the handshake, 0/2 on
+# retry, while general internet access from that same server is fine and
+# the same URL resolves instantly from an Uzbek ISP). A server hosted
+# outside Uzbekistan therefore needs an Uzbek egress point for this one
+# outbound call specifically — everything else the app does is unaffected
+# and keeps using the server's normal network path directly. Empty (the
+# default) preserves that direct-connection behavior exactly as it was
+# before this setting existed. Format: any value Playwright's own `proxy`
+# launch option accepts as `server`, e.g. "http://host:port" or
+# "socks5://host:port" (+ OFD_PROXY_USERNAME/OFD_PROXY_PASSWORD below if
+# the proxy requires auth).
+OFD_PROXY_URL = env("OFD_PROXY_URL", default="")
+OFD_PROXY_USERNAME = env("OFD_PROXY_USERNAME", default="")
+OFD_PROXY_PASSWORD = env("OFD_PROXY_PASSWORD", default="")
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
