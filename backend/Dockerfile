@@ -12,15 +12,15 @@ WORKDIR /app
 # compiled decoder of its own; it dlopen()s libzbar.so.0 at runtime, so
 # without this package the import succeeds but every decode silently fails.
 #
-# libgl1 and libglib2.0-0 are for opencv-python (requirements.txt pins the
-# full build, not -headless — see that file's own comment for why pip can't
-# be pointed at -headless here instead). Confirmed via `ldd` on the actual
-# installed cv2 .so that these two are the only pieces it resolves from the
-# system rather than shipping bundled in the wheel (its Qt5 GUI libs, e.g.,
-# are bundled) — without them, `import cv2` fails at runtime with
-# "libGL.so.1: cannot open shared object file", not at pip-install time.
+# No GUI/X11 packages needed here: requirements.txt pins opencv-python-
+# headless specifically so this image never needs them — see that file's
+# own comment for why (the plain opencv-python/Qt5 build was tried first
+# and rejected after chasing libGL, then libxcb, then libSM/libICE one
+# ldd-and-rebuild cycle at a time; -headless needs nothing beyond what
+# this base image already has, confirmed via `ldd` with zero "not found"
+# lines on the actual installed cv2 .so).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev gcc libzbar0 libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends libpq-dev gcc libzbar0 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PIP_DEFAULT_TIMEOUT=100 \
@@ -37,6 +37,24 @@ COPY requirements.txt .
 # testing that only imported qreader without ever decoding anything.
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+
+# ultralytics, qrdet and qreader are deliberately NOT in requirements.txt
+# and installed here instead, with --no-deps: all three hard-require the
+# package name "opencv-python" (the GUI/Qt5 build, not -headless) in their
+# own metadata regardless of what's already installed, and pip has no way
+# to redirect that to opencv-python-headless for a transitive dependency —
+# installing both variants side by side corrupts the shared cv2 install
+# (whichever finishes writing its files last silently wins, verified: this
+# broke cv2.imshow on a supposedly-headless install). --no-deps skips
+# dependency resolution entirely for just these three, so opencv-python is
+# never evaluated as a requirement at all. Safe because every *other*
+# runtime dependency these three actually need (torch, numpy, pyzbar,
+# quadrilateral-fitter, requests, tqdm, filelock, matplotlib, polars,
+# psutil, PyYAML, Pillow, ultralytics-platform, ultralytics-thop,
+# opencv-python-headless) is already pinned as its own line in
+# requirements.txt and installed normally, above.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-deps ultralytics==8.4.123 qrdet==2.5 qreader==3.16
 
 # Bakes qreader's YOLO detection model (~24MB, github.com/Eric-Canas/qrdet
 # releases) into the image at build time, so no worker process ever needs

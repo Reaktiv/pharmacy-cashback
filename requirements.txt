@@ -52,17 +52,24 @@ mypy_extensions==1.1.0
 networkx==3.6.1
 numpy==2.4.6
 nvidia-ml-py==13.610.43
-# opencv-python, not -headless: ultralytics and qreader both hard-require
-# the package name "opencv-python" (see requirements.txt's own history —
-# pip has no way to substitute -headless for a transitive dependency named
-# opencv-python; installing both is worse, not safer, since they share the
-# same "cv2" import path and whichever installs last silently overwrites
-# the other in site-packages). apps/bot/qr.py's own code has no direct cv2
-# import — this is here purely to satisfy qreader/qrdet/ultralytics
-# internally. See backend/Dockerfile for the libgl1/libglib2.0-0 system
-# packages this build needs at runtime (verified via ldd, not GTK/Qt —
-# those ship bundled inside the wheel).
-opencv-python==5.0.0.93
+# -headless deliberately: ultralytics and qreader both hard-require the
+# package name "opencv-python" (not -headless) in their own metadata, which
+# pip has no way to redirect to -headless for a transitive dependency — so
+# those two, plus qrdet (which requires ultralytics), are installed via a
+# separate `pip install --no-deps` step in backend/Dockerfile instead of
+# through this file's normal resolution, specifically so their opencv-python
+# requirement is never evaluated at all. The plain opencv-python (GUI/Qt5)
+# build was tried first and rejected: even after covering libGL and
+# libglib (found via ldd on a desktop machine, which already had enough X11
+# libraries installed to mask the rest), building the actual Docker image
+# still failed on libxcb.so.1, then libSM.so.6/libICE.so.6 — Qt5's own
+# dependency chain is long and only fully visible inside the real minimal
+# base image, not a desktop dev machine. -headless has none of this: no
+# Qt5, no X11, verified via `ldd` inside python:3.11-slim to need nothing
+# beyond what that image already has. apps/bot/qr.py's own code has no
+# direct cv2 import either way — this exists purely to satisfy qreader/
+# qrdet/ultralytics internally.
+opencv-python-headless==5.0.0.93
 packaging==26.2
 Pillow==12.3.0
 pillow-heif==1.5.0
@@ -86,17 +93,24 @@ pytest-django==4.8.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 PyYAML==6.0.3
-# pyzbar/qrdet/qreader: apps/bot/qr.py's receipt-photo QR decoder (see that
-# module's docstring). qreader's YOLO detector (qrdet, via ultralytics/
-# torch) locates the QR in the frame; pyzbar decodes the crop it produces.
+# pyzbar: the actual pixel decoder underneath qreader (see apps/bot/qr.py's
+# module docstring). ultralytics, qrdet and qreader itself are NOT listed
+# here — see the opencv-python-headless comment above and backend/Dockerfile
+# for why those three install via a separate `pip install --no-deps` step
+# instead. quadrilateral-fitter and shapely below are qrdet's own deps and
+# don't pull opencv-python, so they install normally through this file.
 pyzbar==0.1.9
-qrdet==2.5
-qreader==3.16
 quadrilateral-fitter==1.12
 redis==5.0.8
 requests==2.34.2
 ruff==0.5.7
-scipy==1.18.0
+# quadrilateral-fitter's own dependency (not pinned by hand — this is
+# whatever version pip resolves for the target Python; 1.18.0 (unpinned
+# resolution's first pick, from testing on Python 3.13) requires
+# Python>=3.12 and fails outright on this project's python:3.11-slim image,
+# which is why this is pinned to the specific 3.11-compatible version
+# rather than left implicit).
+scipy==1.17.1
 setuptools==84.0.0
 shapely==2.1.2
 six==1.17.0
@@ -114,7 +128,9 @@ tqdm==4.70.0
 types-PyYAML==6.0.12.20260724
 typing_extensions==4.16.0
 tzdata==2026.3
-ultralytics==8.4.123
+# ultralytics-platform/ultralytics-thop: ultralytics's own deps, not
+# ultralytics itself (see the opencv-python-headless comment above) — these
+# two don't pull opencv-python so they install normally through this file.
 ultralytics-platform==0.1.7
 ultralytics-thop==2.1.6
 urllib3==2.7.0
