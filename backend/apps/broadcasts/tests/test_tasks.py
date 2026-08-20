@@ -178,6 +178,16 @@ def test_send_broadcast_aborts_cleanly_when_tenant_has_no_bot(make_tenant, make_
 
 
 @pytest.mark.django_db
+def test_send_broadcast_skips_cleanly_when_the_broadcast_no_longer_exists():
+    # Regression test: a Broadcast deleted after send_broadcast.delay() was
+    # queued (e.g. via Django admin, since apps.broadcasts.api_views.
+    # BroadcastViewSet.perform_destroy only blocks the ordinary API path)
+    # used to raise Broadcast.DoesNotExist straight out of this task,
+    # showing up as an unhandled Celery error instead of a clean no-op.
+    send_broadcast(999999)  # must not raise
+
+
+@pytest.mark.django_db
 def test_send_broadcast_sends_photo_when_image_media_attached(make_tenant, make_user):
     tenant = make_tenant("t")
     _make_bot_row(tenant)

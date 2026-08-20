@@ -8,6 +8,7 @@ from django.utils import timezone
 from django.utils.http import content_disposition_header
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from apps.accounts.permissions import IsSuperadmin, IsTenantAdmin
@@ -99,6 +100,22 @@ class BroadcastViewSet(viewsets.ModelViewSet):
             target_id=broadcast.id,
             metadata={"title": broadcast.title, "has_media": broadcast.media_id is not None},
         )
+
+    def perform_destroy(self, instance):
+        # Once send() (below) has flipped a broadcast to SENDING, a Celery
+        # task is already queued (or running) against this exact pk —
+        # deleting the row out from under it is exactly what produced a raw
+        # Broadcast.DoesNotExist crash in apps.broadcasts.tasks.send_broadcast
+        # (that task has no try/except of its own around its .get(), by
+        # design: a row that's supposed to exist disappearing is exactly the
+        # case this guard exists to prevent, not something to code around
+        # deeper in the pipeline). A DRAFT broadcast has no task in flight —
+        # only status ever moves DRAFT -> SENDING (send(), guarded to accept
+        # only DRAFT) -> SENT/FAILED, never backwards, so this check can't
+        # let a genuinely-safe-to-delete row through as a false positive.
+        if instance.status != Broadcast.Status.DRAFT:
+            raise ValidationError("Yuborilgan yoki yuborilayotgan xabarnomani o'chirib bo'lmaydi.")
+        instance.delete()
 
     @action(detail=True, methods=["post"])
     def send(self, request, pk=None):

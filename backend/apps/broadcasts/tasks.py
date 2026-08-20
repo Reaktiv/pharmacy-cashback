@@ -143,9 +143,24 @@ async def _send_all(
 
 @shared_task
 def send_broadcast(broadcast_id: int) -> None:
-    broadcast = (
-        Broadcast.objects.all_tenants().select_related("tenant", "media").get(pk=broadcast_id)
-    )
+    # apps.broadcasts.api_views.BroadcastViewSet.perform_destroy blocks
+    # deleting a non-DRAFT broadcast through the normal API, but that's a
+    # guard against the common path (a tenant admin deleting their own
+    # broadcast), not a database constraint — Django admin (BroadcastAdmin)
+    # and direct shell/ORM access can still delete this row between .delay()
+    # being called and this task actually running. That race is real even
+    # with the API guard in place, so it's handled here rather than left to
+    # crash the task and show up as an unhandled Celery error.
+    try:
+        broadcast = (
+            Broadcast.objects.all_tenants().select_related("tenant", "media").get(pk=broadcast_id)
+        )
+    except Broadcast.DoesNotExist:
+        logger.warning(
+            "Broadcast %s: no longer exists (deleted before this task ran?), skipping.",
+            broadcast_id,
+        )
+        return
     bot_row = (
         BotRow.objects.all_tenants().filter(tenant_id=broadcast.tenant_id, is_active=True).first()
     )

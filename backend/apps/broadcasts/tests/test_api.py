@@ -78,6 +78,46 @@ def test_sending_an_already_sent_broadcast_is_rejected(api_client_for, make_user
 
 
 @pytest.mark.django_db
+def test_deleting_a_draft_broadcast_succeeds(api_client_for, make_user, make_tenant):
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    broadcast = Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="Sale!", body="body", created_by=admin
+    )
+    client = api_client_for(admin)
+
+    response = client.delete(f"/api/broadcasts/{broadcast.pk}/")
+
+    assert response.status_code == 204
+    assert not Broadcast.objects.all_tenants().filter(pk=broadcast.pk).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "status", [Broadcast.Status.SENDING, Broadcast.Status.SENT, Broadcast.Status.FAILED]
+)
+def test_deleting_a_non_draft_broadcast_is_rejected(api_client_for, make_user, make_tenant, status):
+    # Regression test: a broadcast in SENDING has a Celery task already
+    # queued (or running) against its pk — deleting it out from under that
+    # task used to crash apps.broadcasts.tasks.send_broadcast with a raw
+    # Broadcast.DoesNotExist (see that task's own defensive fix). This is
+    # the guard that closes off the common path to that race; the task-side
+    # fix is what covers the paths this guard can't reach (Django admin,
+    # direct ORM/shell access).
+    tenant = make_tenant("t")
+    admin = make_user(role=UserProfile.Role.TENANT_ADMIN, tenant=tenant)
+    broadcast = Broadcast.objects.all_tenants().create(
+        tenant=tenant, title="Sale!", body="body", created_by=admin, status=status
+    )
+    client = api_client_for(admin)
+
+    response = client.delete(f"/api/broadcasts/{broadcast.pk}/")
+
+    assert response.status_code == 400
+    assert Broadcast.objects.all_tenants().filter(pk=broadcast.pk).exists()
+
+
+@pytest.mark.django_db
 def test_seller_cannot_access_broadcasts(api_client_for, make_user, make_tenant, make_branch):
     tenant = make_tenant("t")
     branch = make_branch(tenant)
