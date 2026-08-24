@@ -151,6 +151,15 @@ export interface DailyReportRow {
   total_spent: number
 }
 
+export interface SellerDayRow {
+  day: string
+  txn_count: number
+  total_check_amount: number
+  cashback_earned: number
+  cashback_spent: number
+  flagged_count: number
+}
+
 export interface SellerTransactionRow {
   id: number
   created_at: string

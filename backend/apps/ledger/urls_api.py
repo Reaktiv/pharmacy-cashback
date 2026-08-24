@@ -5,6 +5,7 @@ from apps.ledger.api_views import (
     CrossTenantDashboardView,
     DailyEarnSpendReportView,
     ReversalView,
+    SellerDailyBreakdownView,
     SellerReportView,
     SellerTransactionsView,
 )
@@ -18,6 +19,11 @@ urlpatterns = [
         "reports/seller-transactions/",
         SellerTransactionsView.as_view(),
         name="seller-transactions-report",
+    ),
+    path(
+        "reports/seller-daily/",
+        SellerDailyBreakdownView.as_view(),
+        name="seller-daily-report",
     ),
     path("reports/daily/", DailyEarnSpendReportView.as_view(), name="daily-report"),
 ]

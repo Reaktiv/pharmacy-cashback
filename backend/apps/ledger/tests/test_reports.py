@@ -1,11 +1,16 @@
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
+
+from apps.ledger.models import Transaction
 
 from apps.ledger.reports import (
     get_branch_report,
     get_cross_tenant_dashboard,
     get_daily_earn_spend_report,
+    get_seller_daily_breakdown,
     get_seller_report,
     get_seller_transactions,
     get_total_liability,
@@ -338,3 +343,100 @@ def test_daily_earn_spend_report_groups_by_day(
     assert len(rows) == 1
     assert rows[0]["total_earned"] == Decimal("10000.00")
     assert rows[0]["total_spent"] == Decimal("0")
+
+
+@pytest.mark.django_db
+def test_seller_daily_breakdown_groups_by_day_newest_first(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    other_seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+
+    today_txn1 = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    today_txn2 = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("200000"),
+        idempotency_key="k2",
+    )
+    yesterday_txn = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("50000"),
+        idempotency_key="k3",
+    )
+    # A different seller's transaction, same days, must not leak in.
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=other_seller,
+        customer=customer,
+        check_amount=Decimal("999999"),
+        idempotency_key="k4",
+    )
+
+    yesterday = timezone.now() - timedelta(days=1)
+    Transaction.objects.all_tenants().filter(pk=yesterday_txn.pk).update(created_at=yesterday)
+
+    rows = get_seller_daily_breakdown(tenant=tenant, seller_id=seller.pk)
+
+    assert len(rows) == 2
+    assert rows[0]["day"] == timezone.localdate()  # newest first
+    assert rows[0]["txn_count"] == 2
+    assert rows[0]["total_check_amount"] == Decimal("300000.00")
+    assert rows[0]["cashback_earned"] == Decimal("30000.00")
+
+    assert rows[1]["day"] == yesterday.date()
+    assert rows[1]["txn_count"] == 1
+    assert rows[1]["cashback_earned"] == Decimal("5000.00")
+
+    assert {today_txn1.pk, today_txn2.pk} <= {t.pk for t in Transaction.objects.all_tenants().filter(seller=seller)}
+
+
+@pytest.mark.django_db
+def test_seller_transactions_scoped_to_one_day(
+    make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    yesterday_txn = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("50000"),
+        idempotency_key="k2",
+    )
+    yesterday = timezone.now() - timedelta(days=1)
+    Transaction.objects.all_tenants().filter(pk=yesterday_txn.pk).update(created_at=yesterday)
+
+    page = get_seller_transactions(tenant=tenant, seller_id=seller.pk, day=yesterday.date())
+
+    assert page.count == 1
+    assert page.results[0].pk == yesterday_txn.pk
+    assert page.total_check_amount == Decimal("50000.00")

@@ -806,6 +806,18 @@ const STRINGS = {
   reports_stat_total_txns: { uz: 'Jami tranzaksiyalar', en: 'Total transactions', ru: 'Всего транзакций' },
   reports_stat_avg_check: { uz: "O'rtacha chek", en: 'Average check', ru: 'Средний чек' },
   trend_vs_prior_week: { uz: "o'tgan haftaga nisbatan", en: 'vs. prior week', ru: 'к прошлой неделе' },
+  th_day: { uz: 'Sana', en: 'Day', ru: 'Дата' },
+  reports_seller_days_hint: {
+    uz: "Batafsil ma'lumot uchun kunni bosing.",
+    en: 'Click a day to see its details.',
+    ru: 'Нажмите на день, чтобы увидеть подробности.',
+  },
+  reports_seller_no_days_title: {
+    uz: 'Bu sotuvchida hali savdo kunlari yo\'q',
+    en: 'This seller has no sales days yet',
+    ru: 'У этого продавца пока нет дней с продажами',
+  },
+  reports_back_to_days: { uz: 'Kunlar ro\'yxatiga qaytish', en: 'Back to days', ru: 'Назад к списку дней' },
 
   // ---- api/client.ts (used outside React, via translate()) ----
   api_request_failed: {

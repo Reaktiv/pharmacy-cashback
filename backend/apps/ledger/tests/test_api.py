@@ -1,6 +1,8 @@
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 
 from apps.accounts.models import UserProfile
 from apps.ledger.models import Transaction
@@ -313,5 +315,139 @@ def test_seller_transactions_requires_seller_id(
     client = api_client_for(manager)
 
     response = client.get("/api/reports/seller-transactions/")
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_seller_transactions_rejects_bad_day(
+    api_client_for, make_user, make_tenant, make_branch, make_seller
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get(
+        f"/api/reports/seller-transactions/?seller_id={seller.pk}&day=not-a-date"
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_seller_transactions_day_filters_to_one_day(
+    api_client_for, make_user, make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    yesterday_txn = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("50000"),
+        idempotency_key="k2",
+    )
+    yesterday = timezone.now() - timedelta(days=1)
+    Transaction.objects.all_tenants().filter(pk=yesterday_txn.pk).update(created_at=yesterday)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get(
+        f"/api/reports/seller-transactions/?seller_id={seller.pk}&day={yesterday.date().isoformat()}"
+    )
+
+    assert response.status_code == 200
+    assert response.data["count"] == 1
+    assert response.data["results"][0]["id"] == yesterday_txn.pk
+
+
+@pytest.mark.django_db
+def test_branch_manager_can_view_their_own_sellers_daily_breakdown(
+    api_client_for, make_user, make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    seller = make_seller(tenant, branch)
+    customer = make_customer(tenant)
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    yesterday_txn = post_earn_transaction(
+        tenant=tenant,
+        branch=branch,
+        seller=seller,
+        customer=customer,
+        check_amount=Decimal("50000"),
+        idempotency_key="k2",
+    )
+    yesterday = timezone.now() - timedelta(days=1)
+    Transaction.objects.all_tenants().filter(pk=yesterday_txn.pk).update(created_at=yesterday)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get(f"/api/reports/seller-daily/?seller_id={seller.pk}")
+
+    assert response.status_code == 200
+    assert len(response.data) == 2
+    assert response.data[0]["day"] == timezone.localdate()  # newest first
+    assert response.data[0]["txn_count"] == 1
+    assert response.data[0]["cashback_earned"] == Decimal("10000.00")
+    assert response.data[1]["day"] == yesterday.date()
+    assert response.data[1]["cashback_earned"] == Decimal("5000.00")
+
+
+@pytest.mark.django_db
+def test_branch_manager_cannot_view_another_branchs_seller_daily_breakdown(
+    api_client_for, make_user, make_tenant, make_branch, make_seller, make_customer
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch_a = make_branch(tenant)
+    branch_b = make_branch(tenant)
+    seller_b = make_seller(tenant, branch_b)
+    customer = make_customer(tenant)
+    post_earn_transaction(
+        tenant=tenant,
+        branch=branch_b,
+        seller=seller_b,
+        customer=customer,
+        check_amount=Decimal("100000"),
+        idempotency_key="k1",
+    )
+    manager_a = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch_a)
+    client = api_client_for(manager_a)
+
+    response = client.get(f"/api/reports/seller-daily/?seller_id={seller_b.pk}")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_seller_daily_breakdown_requires_seller_id(
+    api_client_for, make_user, make_tenant, make_branch
+):
+    tenant = make_tenant("t", rate=Decimal("10.00"))
+    branch = make_branch(tenant)
+    manager = make_user(role=UserProfile.Role.BRANCH_MANAGER, tenant=tenant, branch=branch)
+    client = api_client_for(manager)
+
+    response = client.get("/api/reports/seller-daily/")
 
     assert response.status_code == 400

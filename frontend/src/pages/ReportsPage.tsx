@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import type {
   BranchReportRow,
   DailyReportRow,
+  SellerDayRow,
   SellerReportRow,
   SellerTransactionRow,
   SellerTransactionsPage,
@@ -20,6 +21,7 @@ import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
 import { DualBarChart, PieChart } from '../components/Charts'
 import {
   IconAlertCircle,
+  IconArrowLeft,
   IconTrendUp,
   IconTrendDown,
   IconScale,
@@ -31,6 +33,11 @@ import {
 function formatDay(day: string): string {
   const parts = day.split('-')
   return parts.length === 3 ? `${parts[2]}.${parts[1]}` : day
+}
+
+function formatFullDay(day: string): string {
+  const parts = day.split('-')
+  return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : day
 }
 
 function formatDateTime(iso: string): string {
@@ -49,7 +56,15 @@ function txnTypeLabel(row: SellerTransactionRow, t: TFunction): string {
 
 const SELLER_HISTORY_PAGE_SIZE = 100
 
-function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
+function SellerDayDetailPanel({
+  sellerId,
+  day,
+  onBack,
+}: {
+  sellerId: number
+  day: string
+  onBack: () => void
+}) {
   const { t } = useLanguage()
 
   const {
@@ -60,10 +75,10 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['reports', 'seller-transactions', sellerId],
+    queryKey: ['reports', 'seller-transactions', sellerId, day],
     queryFn: ({ pageParam }) =>
       apiFetch<SellerTransactionsPage>(
-        `/api/reports/seller-transactions/?seller_id=${sellerId}&limit=${SELLER_HISTORY_PAGE_SIZE}&offset=${pageParam}`,
+        `/api/reports/seller-transactions/?seller_id=${sellerId}&day=${day}&limit=${SELLER_HISTORY_PAGE_SIZE}&offset=${pageParam}`,
       ),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
@@ -72,25 +87,47 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
     },
   })
 
+  const backButton = (
+    <button type="button" className="secondary" onClick={onBack} style={{ marginBottom: '1rem' }}>
+      <IconArrowLeft /> {t('reports_back_to_days')}
+    </button>
+  )
+
   if (error) {
     return (
-      <div className="error-banner">
-        <IconAlertCircle />
-        <span>{error.message}</span>
+      <div>
+        {backButton}
+        <div className="error-banner">
+          <IconAlertCircle />
+          <span>{error.message}</span>
+        </div>
       </div>
     )
   }
 
-  if (isPending) return <SkeletonTable rows={4} />
+  if (isPending) {
+    return (
+      <div>
+        {backButton}
+        <SkeletonTable rows={4} />
+      </div>
+    )
+  }
 
   const txns = data.pages.flatMap((p) => p.results)
   const totals = data.pages[0].totals
   if (txns.length === 0) {
-    return <EmptyState icon={<IconClipboardEmpty />} title={t('reports_seller_empty_title')} />
+    return (
+      <div>
+        {backButton}
+        <EmptyState icon={<IconClipboardEmpty />} title={t('reports_seller_empty_title')} />
+      </div>
+    )
   }
 
   return (
     <div>
+      {backButton}
       <div className="table-scroll">
         <table>
           <thead>
@@ -153,6 +190,76 @@ function SellerHistoryPanel({ sellerId }: { sellerId: number }) {
             { label: t('reports_pie_cashback_used'), value: totals.cashback_spent, color: 'var(--chart-spend)' },
           ]}
         />
+      </div>
+    </div>
+  )
+}
+
+/** Seller drill-down, level 1: which days this seller has transactions on
+ * (SellerDailyBreakdownView), each row clickable into SellerDayDetailPanel
+ * above for that day's full transaction list. */
+function SellerDayListPanel({ sellerId }: { sellerId: number }) {
+  const { t } = useLanguage()
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
+
+  const { data, error, isPending } = useQuery({
+    queryKey: ['reports', 'seller-daily', sellerId],
+    queryFn: () => apiFetch<SellerDayRow[]>(`/api/reports/seller-daily/?seller_id=${sellerId}`),
+    enabled: selectedDay === null,
+  })
+
+  if (selectedDay !== null) {
+    return (
+      <SellerDayDetailPanel sellerId={sellerId} day={selectedDay} onBack={() => setSelectedDay(null)} />
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="error-banner">
+        <IconAlertCircle />
+        <span>{error.message}</span>
+      </div>
+    )
+  }
+
+  if (isPending) return <SkeletonTable rows={4} />
+
+  const days = data
+  if (days.length === 0) {
+    return <EmptyState icon={<IconClipboardEmpty />} title={t('reports_seller_no_days_title')} />
+  }
+
+  return (
+    <div>
+      <p style={{ margin: '0 0 0.75rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+        {t('reports_seller_days_hint')}
+      </p>
+      <div className="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>{t('th_day')}</th>
+              <th>{t('th_transactions')}</th>
+              <th>{t('th_check_amount')}</th>
+              <th>{t('th_cashback_earned')}</th>
+              <th>{t('th_cashback_spent')}</th>
+              <th>{t('th_flagged')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((row) => (
+              <tr key={row.day} className="clickable" onClick={() => setSelectedDay(row.day)}>
+                <td className="num">{formatFullDay(row.day)}</td>
+                <td className="num">{row.txn_count.toLocaleString()}</td>
+                <td className="num">{row.total_check_amount.toLocaleString()}</td>
+                <td className="num">{row.cashback_earned.toLocaleString()}</td>
+                <td className="num">{row.cashback_spent.toLocaleString()}</td>
+                <td className="num">{row.flagged_count.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )
@@ -321,7 +428,7 @@ export default function ReportsPage() {
                 expanded={!!isExpanded}
                 onToggle={() => setExpandedSellerId(isExpanded ? null : row.seller_id)}
               >
-                {isExpandable && <SellerHistoryPanel sellerId={row.seller_id!} />}
+                {isExpandable && <SellerDayListPanel sellerId={row.seller_id!} />}
               </SellerPerformanceCard>
             )
           })}

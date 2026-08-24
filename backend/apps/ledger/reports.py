@@ -175,12 +175,47 @@ class SellerTransactionsPage:
     total_cashback_spent: Decimal
 
 
+def get_seller_daily_breakdown(*, tenant: Tenant, seller_id: int) -> list[dict]:
+    """One row per day this seller has transactions, newest day first — the
+    first level of the branch-manager/tenant-admin seller drill-down
+    (CLAUDE.md §7c): pick a seller, see which days they sold on, then pick
+    a day to see that day's full transaction list via
+    get_seller_transactions(day=...) below.
+    """
+    rows = (
+        Transaction.objects.all_tenants()
+        .filter(tenant=tenant, seller_id=seller_id)
+        .annotate(day=TruncDate("created_at"))
+        .values("day")
+        .annotate(
+            txn_count=Count("id"),
+            total_check_amount=Sum("check_amount"),
+            cashback_earned=Sum("cashback_earned"),
+            cashback_spent=Sum("cashback_spent"),
+            flagged_count=Count("id", filter=Q(flagged=True)),
+        )
+        .order_by("-day")
+    )
+    return [
+        {
+            "day": row["day"],
+            "txn_count": row["txn_count"],
+            "total_check_amount": row["total_check_amount"] or Decimal("0"),
+            "cashback_earned": row["cashback_earned"] or Decimal("0"),
+            "cashback_spent": row["cashback_spent"] or Decimal("0"),
+            "flagged_count": row["flagged_count"],
+        }
+        for row in rows
+    ]
+
+
 def get_seller_transactions(
     *,
     tenant: Tenant,
     seller_id: int,
     limit: int = DEFAULT_SELLER_TRANSACTIONS_PAGE_SIZE,
     offset: int = 0,
+    day=None,
 ) -> SellerTransactionsPage:
     """Paginated transaction history for one seller, newest first — the
     branch-manager drill-down from the seller report row (CLAUDE.md §7c
@@ -191,12 +226,16 @@ def get_seller_transactions(
     returns one page (limit/offset) rather than everything — but count and
     totals are aggregated over the FULL matching set in the same query, so
     the caller can show accurate running totals alongside a partial list.
+    Pass `day` (a date) to scope this to one day from get_seller_daily_breakdown
+    above — the second level of the day-by-day drill-down.
     """
     qs = (
         Transaction.objects.all_tenants()
         .filter(tenant=tenant, seller_id=seller_id)
         .order_by("-created_at")
     )
+    if day is not None:
+        qs = qs.filter(created_at__date=day)
     totals = qs.aggregate(
         count=Count("id"),
         total_check_amount=Sum("check_amount"),

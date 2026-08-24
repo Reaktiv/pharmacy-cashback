@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.core.cache import cache
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -12,6 +14,7 @@ from apps.ledger.reports import (
     get_branch_report,
     get_cross_tenant_dashboard,
     get_daily_earn_spend_report,
+    get_seller_daily_breakdown,
     get_seller_report,
     get_seller_transactions,
 )
@@ -46,6 +49,27 @@ def _resolve_report_tenant(request):
         except (Tenant.DoesNotExist, ValueError) as exc:
             raise ValidationError({"tenant_id": "Tenant not found."}) from exc
     return profile.tenant
+
+
+def _resolve_report_seller(request, tenant):
+    """Shared by SellerTransactionsView and SellerDailyBreakdownView: look
+    up ?seller_id= within `tenant`, then apply the same branch-manager
+    scoping SellerReportView uses (own branch only). Returns (seller, None)
+    on success, or (None, error_response) to return as-is."""
+    seller_id = request.query_params.get("seller_id")
+    if not seller_id:
+        raise ValidationError({"seller_id": "Required."})
+
+    try:
+        seller = Seller.objects.all_tenants().get(pk=seller_id, tenant=tenant)
+    except (Seller.DoesNotExist, ValueError):
+        return None, Response({"detail": "Seller not found."}, status=404)
+
+    profile = request.user.profile
+    if profile.role == UserProfile.Role.BRANCH_MANAGER and seller.branch_id != profile.branch_id:
+        return None, Response({"detail": "Seller not found."}, status=404)
+
+    return seller, None
 
 
 class ReversalView(APIView):
@@ -197,27 +221,17 @@ class SellerReportView(APIView):
 class SellerTransactionsView(APIView):
     """Drill-down from the seller report row: full transaction history for
     one seller, newest first, scoped the same way as SellerReportView. A
-    branch manager may only pull sellers from their own branch."""
+    branch manager may only pull sellers from their own branch. Pass
+    ?day=YYYY-MM-DD (a row from SellerDailyBreakdownView below) to scope
+    this to one day instead of the seller's whole history."""
 
     permission_classes = [IsTenantAdmin | IsBranchManager | IsSuperadmin]
 
     def get(self, request):
-        seller_id = request.query_params.get("seller_id")
-        if not seller_id:
-            raise ValidationError({"seller_id": "Required."})
-
         tenant = _resolve_report_tenant(request)
-        try:
-            seller = Seller.objects.all_tenants().get(pk=seller_id, tenant=tenant)
-        except (Seller.DoesNotExist, ValueError):
-            return Response({"detail": "Seller not found."}, status=404)
-
-        profile = request.user.profile
-        if (
-            profile.role == UserProfile.Role.BRANCH_MANAGER
-            and seller.branch_id != profile.branch_id
-        ):
-            return Response({"detail": "Seller not found."}, status=404)
+        seller, error = _resolve_report_seller(request, tenant)
+        if error is not None:
+            return error
 
         try:
             limit = int(request.query_params.get("limit", DEFAULT_SELLER_TRANSACTIONS_PAGE_SIZE))
@@ -233,8 +247,16 @@ class SellerTransactionsView(APIView):
         if offset < 0:
             raise ValidationError({"offset": "Must be non-negative."})
 
+        day_param = request.query_params.get("day")
+        day = None
+        if day_param:
+            try:
+                day = date.fromisoformat(day_param)
+            except ValueError as exc:
+                raise ValidationError({"day": "Must be an ISO date (YYYY-MM-DD)."}) from exc
+
         page = get_seller_transactions(
-            tenant=tenant, seller_id=seller.id, limit=limit, offset=offset
+            tenant=tenant, seller_id=seller.id, limit=limit, offset=offset, day=day
         )
         return Response(
             {
@@ -261,6 +283,36 @@ class SellerTransactionsView(APIView):
                     "cashback_spent": page.total_cashback_spent,
                 },
             }
+        )
+
+
+class SellerDailyBreakdownView(APIView):
+    """First level of the seller drill-down: one row per day this seller
+    has transactions, newest first — the admin picks a day here, then
+    SellerTransactionsView?day=... shows that day's full list. Scoped the
+    same way as SellerTransactionsView."""
+
+    permission_classes = [IsTenantAdmin | IsBranchManager | IsSuperadmin]
+
+    def get(self, request):
+        tenant = _resolve_report_tenant(request)
+        seller, error = _resolve_report_seller(request, tenant)
+        if error is not None:
+            return error
+
+        rows = get_seller_daily_breakdown(tenant=tenant, seller_id=seller.id)
+        return Response(
+            [
+                {
+                    "day": row["day"],
+                    "txn_count": row["txn_count"],
+                    "total_check_amount": row["total_check_amount"],
+                    "cashback_earned": row["cashback_earned"],
+                    "cashback_spent": row["cashback_spent"],
+                    "flagged_count": row["flagged_count"],
+                }
+                for row in rows
+            ]
         )
 
 
