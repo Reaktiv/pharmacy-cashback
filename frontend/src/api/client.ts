@@ -128,6 +128,12 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   if (response.status === 401 && getRefreshToken()) {
     const newAccess = await refreshAccessToken()
     response = await doFetch(newAccess)
+    // A 401 that survives a freshly-minted access token isn't a stale
+    // token — the identity itself is being refused (deactivated user, or a
+    // tenant the superadmin has switched off). Treat it as a dead session
+    // so AuthProvider logs out and routes back to the login screen, which
+    // then surfaces the "Kirish huquqingiz yo'q" reason on the next attempt.
+    if (response.status === 401) endSession()
   }
 
   if (!response.ok) {
@@ -153,6 +159,7 @@ export async function apiFetchObjectUrl(path: string): Promise<string> {
   if (response.status === 401 && getRefreshToken()) {
     const newAccess = await refreshAccessToken()
     response = await doFetch(newAccess)
+    if (response.status === 401) endSession()
   }
 
   if (!response.ok) {

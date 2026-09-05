@@ -62,8 +62,39 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      # libzbar0 is pyzbar's runtime dependency and is not on the runner
+      # image. pyzbar dlopen()s libzbar.so.0 at *import* time, so without
+      # it every test that touches apps.bot.qr fails on the import line,
+      # not on a decode. Same reason backend/Dockerfile installs it.
+      - name: Install libzbar0
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libzbar0
+
+      # --extra-index-url must match backend/Dockerfile's: requirements.txt
+      # pins torch/torchvision to *+cpu* local-version builds, which exist
+      # only on download.pytorch.org, never on PyPI. Without this flag pip
+      # resolves against PyPI alone and the whole step dies with "No
+      # matching distribution found for torch==2.13.0+cpu" before a single
+      # test runs.
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install --extra-index-url https://download.pytorch.org/whl/cpu \
+              -r requirements.txt
+
+      # ultralytics/qrdet/qreader are deliberately absent from
+      # requirements.txt and installed with --no-deps instead — see that
+      # file's opencv-python-headless comment and backend/Dockerfile for
+      # why (all three hard-require the GUI "opencv-python" in their
+      # metadata, which corrupts the headless cv2 install). apps/bot/qr.py
+      # imports qreader at module level and apps/bot/tests/test_receipt.py
+      # runs real decodes, so CI needs them exactly as the image has them.
+      - name: Install QR decode stack (--no-deps, mirrors backend/Dockerfile)
+        run: pip install --no-deps ultralytics==8.4.123 qrdet==2.5 qreader==3.16
+
+      # Fetches qrdet's YOLO weights up front, the same way the image bakes
+      # them in, so a network hiccup shows up here as an infra failure
+      # instead of as a confusing mass of "QR not found" test failures.
+      - name: Warm qreader model cache
+        run: python -c "from qreader import QReader; QReader(model_size='s')"
 
       # Required gate: the ledger/tenancy/fraud-limit test suite, including
       # the mandatory tenant-isolation test (CLAUDE.md §4), must pass before

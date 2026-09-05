@@ -210,7 +210,9 @@ class PlatformLogoView(APIView):
         gs = GlobalSettings.load()
         if not gs.platform_logo:
             raise Http404
-        response = FileResponse(gs.platform_logo.open("rb"), content_type="application/octet-stream")
+        response = FileResponse(
+            gs.platform_logo.open("rb"), content_type="application/octet-stream"
+        )
         # Longer than PlatformBrandingView's max-age: a logo changes even
         # less often than the name, and re-uploads get a brand new
         # (uuid4-named) file/ETag anyway, so a longer window here doesn't

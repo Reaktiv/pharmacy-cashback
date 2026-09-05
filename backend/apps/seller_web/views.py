@@ -23,6 +23,7 @@ from apps.ledger.services import (
 )
 from apps.seller_web.forms import EarnForm, RedeemForm
 from apps.seller_web.i18n import LANGUAGE_COOKIE, LANGUAGES, get_language, strings_for, t
+from apps.tenants.access import tenant_is_blocked
 
 # Aligned with the session cookie's own lifetime expectations — long enough
 # that picking a language once sticks around, short enough to naturally
@@ -64,12 +65,25 @@ def seller_required(view_func):
     def wrapper(request, *args, **kwargs):
         profile = getattr(request.user, "profile", None)
         seller = getattr(request.user, "seller_profile", None)
+        language = get_language(request)
         if profile is None or profile.role != UserProfile.Role.SELLER or seller is None:
-            language = get_language(request)
             return render(
                 request,
                 "seller_web/forbidden.html",
                 {"s": strings_for(language), "language": language, "languages": LANGUAGES},
+                status=403,
+            )
+        # A superadmin-deactivated tenant locks out its sellers too.
+        if tenant_is_blocked(profile):
+            return render(
+                request,
+                "seller_web/forbidden.html",
+                {
+                    "s": strings_for(language),
+                    "language": language,
+                    "languages": LANGUAGES,
+                    "reason": strings_for(language)["tenant_blocked_subtitle"],
+                },
                 status=403,
             )
         request.seller = seller

@@ -99,6 +99,11 @@ _STRINGS = {
         "en": "This page is only for seller accounts.",
         "ru": "Эта страница доступна только для аккаунтов продавцов.",
     },
+    "tenant_blocked_subtitle": {
+        "uz": "Kirish huquqingiz yo'q — dorixona faolsizlantirilgan.",
+        "en": "You do not have access — this pharmacy has been deactivated.",
+        "ru": "У вас нет доступа — аптека деактивирована.",
+    },
 
     "earn_form_invalid": {
         "uz": "Iltimos, summa va telefon raqamini tekshiring.",

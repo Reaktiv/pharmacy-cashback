@@ -16,6 +16,7 @@ from apps.accounts.ratelimit import (
 )
 from apps.accounts.serializers import TenantAwareTokenObtainPairSerializer
 from apps.seller_web.i18n import LANGUAGES, get_language, strings_for
+from apps.tenants.access import TENANT_INACTIVE_MESSAGE, tenant_is_blocked
 from apps.tenants.models import GlobalSettings
 
 SELLER_LOGIN_ATTEMPT_LIMIT = 5
@@ -47,6 +48,14 @@ class SellerLoginView(LoginView):
             form.add_error(None, str(exc))
             return self.form_invalid(form)
         return super().post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        # Credentials check out, but a superadmin has deactivated this
+        # seller's tenant — refuse the login the same way the JWT panel does.
+        if tenant_is_blocked(getattr(form.get_user(), "profile", None)):
+            form.add_error(None, TENANT_INACTIVE_MESSAGE)
+            return self.form_invalid(form)
+        return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

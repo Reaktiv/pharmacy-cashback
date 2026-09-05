@@ -3,9 +3,11 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction as db_transaction
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from apps.accounts.models import Branch, Seller, UserProfile
+from apps.tenants.access import TENANT_INACTIVE_MESSAGE, tenant_is_blocked
 from apps.tenants.models import GlobalSettings, Tenant
 
 # Self-service profile picture — deliberately smaller than broadcast media's
@@ -32,6 +34,14 @@ class TenantAwareTokenObtainPairSerializer(TokenObtainPairSerializer):
         token["tenant_id"] = profile.tenant_id if profile else None
         token["branch_id"] = profile.branch_id if profile else None
         return token
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        # No token for a login whose tenant a superadmin has deactivated —
+        # same gate CachingJWTAuthentication applies to existing sessions.
+        if tenant_is_blocked(getattr(self.user, "profile", None)):
+            raise AuthenticationFailed(TENANT_INACTIVE_MESSAGE, code="tenant_inactive")
+        return data
 
 
 class BranchSerializer(serializers.ModelSerializer):
@@ -149,6 +159,11 @@ class BranchManagerSerializer(serializers.Serializer):
     branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects)
     branch_name = serializers.CharField(source="branch.name", read_only=True)
     is_active = serializers.BooleanField(source="user.is_active", required=False)
+    # Read-only profile details for the tenant admin's oversight drawer — the
+    # manager edits their own name/phone via MeSerializer, not from here.
+    full_name = serializers.CharField(read_only=True)
+    phone = serializers.CharField(read_only=True)
+    role = serializers.CharField(read_only=True)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -221,6 +236,11 @@ class TenantAdminSerializer(serializers.Serializer):
     tenant = serializers.PrimaryKeyRelatedField(queryset=Tenant.objects.all())
     tenant_name = serializers.CharField(source="tenant.name", read_only=True)
     is_active = serializers.BooleanField(source="user.is_active", required=False)
+    # Read-only profile details for the superadmin's oversight drawer — the
+    # admin edits their own name/phone via MeSerializer, not from here.
+    full_name = serializers.CharField(read_only=True)
+    phone = serializers.CharField(read_only=True)
+    role = serializers.CharField(read_only=True)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

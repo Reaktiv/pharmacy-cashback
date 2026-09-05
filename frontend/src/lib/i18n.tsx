@@ -365,6 +365,17 @@ const STRINGS = {
     ru: '{slug} · кешбэк {rate}% · {status}',
   },
   tenant_detail_delete_button: { uz: "Dorixonani o'chirish", en: 'Delete pharmacy', ru: 'Удалить аптеку' },
+  tenant_danger_zone_heading: { uz: 'Xavfli hudud', en: 'Danger zone', ru: 'Опасная зона' },
+  tenant_deactivate_hint: {
+    uz: "Faolsizlantirilsa, dorixona boti va kassalari ishlashdan to'xtaydi.",
+    en: 'While deactivated, the pharmacy bot and cash desks stop working.',
+    ru: 'При деактивации бот аптеки и кассы перестают работать.',
+  },
+  tenant_delete_hint: {
+    uz: "Dorixona va uning barcha filiallari, adminlari, tranzaksiyalari butunlay o'chiriladi.",
+    en: 'The pharmacy and all its branches, admins and transactions are permanently removed.',
+    ru: 'Аптека и все её филиалы, администраторы и транзакции удаляются безвозвратно.',
+  },
   label_outstanding_liability: { uz: 'Qoldiq (majburiyat)', en: 'Outstanding (liability)', ru: 'Остаток (обязательства)' },
   label_branches: { uz: 'Filiallar', en: 'Branches', ru: 'Филиалы' },
   tenant_detail_bot_card_heading: { uz: 'Telegram bot', en: 'Telegram bot', ru: 'Telegram-бот' },
@@ -542,6 +553,13 @@ const STRINGS = {
   field_new_branch_name: { uz: 'Yangi filial nomi', en: 'New branch name', ru: 'Название нового филиала' },
   tenant_admin_add_branch_button: { uz: "Filial qo'shish", en: 'Add branch', ru: 'Добавить филиал' },
   branch_drawer_subtitle: { uz: 'Filial', en: 'Branch', ru: 'Филиал' },
+  tenant_branches_back: { uz: 'Barcha filiallar', en: 'All branches', ru: 'Все филиалы' },
+  branch_manage_button: { uz: 'Filialni sozlash', en: 'Manage branch', ru: 'Управление филиалом' },
+  branch_managers_empty: {
+    uz: 'Bu filialga admin biriktirilmagan',
+    en: 'No admin assigned to this branch',
+    ru: 'К этому филиалу не назначен администратор',
+  },
   branch_delete_button: { uz: "Filialni o'chirish", en: 'Delete branch', ru: 'Удалить филиал' },
   branch_delete_step1_title: { uz: "Filialni o'chirasizmi?", en: 'Delete this branch?', ru: 'Удалить филиал?' },
   branch_delete_step1_description: {
@@ -841,6 +859,16 @@ const STRINGS = {
   status_inactive: { uz: 'Faol emas', en: 'Inactive', ru: 'Неактивен' },
   activate_button: { uz: 'Faollashtirish', en: 'Activate', ru: 'Активировать' },
   deactivate_button: { uz: 'Faolsizlantirish', en: 'Deactivate', ru: 'Деактивировать' },
+  deactivate_confirm_title: {
+    uz: 'Faolsizlantirilsinmi?',
+    en: 'Deactivate this?',
+    ru: 'Деактивировать?',
+  },
+  deactivate_confirm_description: {
+    uz: "Faolsizlantirilgandan so'ng unga bog'liq hisoblar tizimga kira olmaydi. Istalgan vaqtda qayta faollashtirishingiz mumkin.",
+    en: 'Once deactivated, the linked accounts can no longer sign in. You can reactivate it anytime.',
+    ru: 'После деактивации связанные аккаунты не смогут войти в систему. Вы можете активировать обратно в любой момент.',
+  },
   active_toggle_error: {
     uz: "Holatni o'zgartirib bo'lmadi.",
     en: "Couldn't change the status.",
