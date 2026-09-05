@@ -11,7 +11,7 @@
     </svg>
   </div>
   <h1>{{ s.forbidden_title }}</h1>
-  <p style="color:var(--pharm-ink-muted); margin-top:0.5rem;">{{ s.forbidden_subtitle }}</p>
+  <p style="color:var(--pharm-ink-muted); margin-top:0.5rem;">{{ reason|default:s.forbidden_subtitle }}</p>
   <form method="post" action="{% url 'accounts:logout' %}" data-confirm-logout style="margin-top:1.75rem; display:inline-block;">
     {% csrf_token %}
     <button type="submit" class="danger" style="width:auto; padding:0.7rem 1.75rem;">{{ s.logout }}</button>

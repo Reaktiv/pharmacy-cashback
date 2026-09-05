@@ -20,6 +20,8 @@ from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidTok
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.utils import get_md5_hash_password
 
+from apps.tenants.access import TENANT_INACTIVE_MESSAGE, tenant_is_blocked
+
 _CACHE_ATTR = "_tenant_jwt_auth_cache"
 _UNSET = object()
 
@@ -68,6 +70,12 @@ class CachingJWTAuthentication(JWTAuthentication):
 
         if not user.is_active:
             raise AuthenticationFailed(_("User is inactive"), code="user_inactive")
+
+        # A deactivated tenant locks out all of its admins/managers/sellers,
+        # even on tokens issued while it was still active. `profile__tenant`
+        # is already select_related above, so this costs no extra query.
+        if tenant_is_blocked(getattr(user, "profile", None)):
+            raise AuthenticationFailed(TENANT_INACTIVE_MESSAGE, code="tenant_inactive")
 
         if api_settings.CHECK_REVOKE_TOKEN:
             if validated_token.get(

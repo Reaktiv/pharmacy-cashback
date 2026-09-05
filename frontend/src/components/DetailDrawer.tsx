@@ -72,3 +72,22 @@ export function DrawerField({ label, value }: { label: string; value: ReactNode 
     </div>
   )
 }
+
+export type SpecRow = { label: string; value: ReactNode; mono?: boolean }
+
+/** A drawer's read-only spec sheet — one bordered row per field so each
+ * value reads as a distinct line. `mono` renders the value in IBM Plex
+ * Mono (phone numbers, logins, IDs). Falsy rows are skipped, so callers
+ * can inline `condition && { ... }`. */
+export function DrawerSpec({ rows }: { rows: (SpecRow | false | null | undefined)[] }) {
+  return (
+    <div className="spec-list">
+      {rows.filter((r): r is SpecRow => Boolean(r)).map((r) => (
+        <div key={r.label} className="spec-row">
+          <span className="spec-row-label">{r.label}</span>
+          <span className={`spec-row-value${r.mono ? ' mono' : ''}`}>{r.value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}

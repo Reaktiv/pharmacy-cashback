@@ -2,13 +2,13 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, ApiError } from '../api/client'
 import type { Seller } from '../api/types'
-import { activeStatusLabel } from '../lib/labels'
+import { activeStatusLabel, roleLabel } from '../lib/labels'
 import { useLanguage } from '../lib/i18n'
 import StatCard from './StatCard'
 import EmptyState from './EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from './Skeleton'
 import ConfirmDialog from './ConfirmDialog'
-import DetailDrawer, { DrawerField } from './DetailDrawer'
+import DetailDrawer, { DrawerSpec } from './DetailDrawer'
 import ActiveToggle from './ActiveToggle'
 import { IconAlertCircle, IconUsers, IconPulse, IconTrash, IconCheckCircle } from './Icons'
 
@@ -96,7 +96,7 @@ function DailyLimitEditor({ seller, onSaved }: { seller: Seller; onSaved: (s: Se
  * read-only "Sellerlar" section on the Dorixona overview page (CLAUDE.md
  * §3 — tenant admin doesn't add sellers directly, so no delete there
  * either). */
-export default function SellersList({ canManage }: { canManage: boolean }) {
+export default function SellersList({ canManage, branchId }: { canManage: boolean; branchId?: number }) {
   const { t, language } = useLanguage()
   const queryClient = useQueryClient()
   const {
@@ -146,23 +146,27 @@ export default function SellersList({ canManage }: { canManage: boolean }) {
     )
   }
 
-  const activeCount = sellers.filter((s) => s.is_active).length
+  // Tenant admin's branch drill-down passes `branchId` to scope the list to
+  // one branch; the branch manager's own page omits it (their /api/sellers/
+  // is already branch-scoped server-side).
+  const rows = branchId == null ? sellers : sellers.filter((s) => s.branch === branchId)
+  const activeCount = rows.filter((s) => s.is_active).length
 
   return (
     <div>
       <div className="stat-grid">
-        <StatCard icon={<IconUsers />} label={t('sellers_stat_total')} value={sellers.length} />
+        <StatCard icon={<IconUsers />} label={t('sellers_stat_total')} value={rows.length} />
         <StatCard
           icon={<IconPulse />}
           label={t('sellers_stat_active')}
           value={activeCount}
           tone="success"
-          sub={t('sellers_stat_inactive_sub', { count: sellers.length - activeCount })}
+          sub={t('sellers_stat_inactive_sub', { count: rows.length - activeCount })}
         />
       </div>
 
       <div className="table-card">
-        {sellers.length === 0 ? (
+        {rows.length === 0 ? (
           <EmptyState icon={<IconUsers />} title={t('sellers_empty_title')} />
         ) : (
           <div className="table-scroll">
@@ -176,7 +180,7 @@ export default function SellersList({ canManage }: { canManage: boolean }) {
                 </tr>
               </thead>
               <tbody>
-                {sellers.map((s) => (
+                {rows.map((s) => (
                   <tr key={s.id} className="clickable" onClick={() => setSelected(s)}>
                     <td>{s.full_name}</td>
                     <td>{s.phone}</td>
@@ -219,8 +223,27 @@ export default function SellersList({ canManage }: { canManage: boolean }) {
       >
         {selected && (
           <>
-            <DrawerField label={t('field_phone')} value={selected.phone} />
-            {canManage ? (
+            <DrawerSpec
+              rows={[
+                { label: t('field_full_name'), value: selected.full_name || '—' },
+                { label: t('field_phone'), value: selected.phone, mono: true },
+                { label: t('field_role'), value: roleLabel(language, 'seller') },
+                !canManage && {
+                  label: t('th_daily_limit'),
+                  value: selected.daily_txn_limit ?? t('unlimited'),
+                  mono: true,
+                },
+                {
+                  label: t('status_label'),
+                  value: (
+                    <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
+                      {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+            {canManage && (
               <DailyLimitEditor
                 seller={selected}
                 onSaved={(updated) => {
@@ -228,17 +251,7 @@ export default function SellersList({ canManage }: { canManage: boolean }) {
                   queryClient.invalidateQueries({ queryKey: ['sellers'] })
                 }}
               />
-            ) : (
-              <DrawerField label={t('th_daily_limit')} value={selected.daily_txn_limit ?? t('unlimited')} />
             )}
-            <DrawerField
-              label={t('status_label')}
-              value={
-                <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
-                  {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
-                </span>
-              }
-            />
             {canManage && (
               <ActiveToggle<Seller>
                 endpoint={`/api/sellers/${selected.id}/`}

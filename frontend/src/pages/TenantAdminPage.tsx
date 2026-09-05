@@ -1,67 +1,128 @@
-import { useEffect, useState } from 'react'
+import { useState, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import type { Branch, BranchManager, Tenant } from '../api/types'
-import { activeStatusLabel } from '../lib/labels'
-import { useLanguage } from '../lib/i18n'
+import { activeStatusLabel, roleLabel } from '../lib/labels'
+import { useLanguage, type StringKey } from '../lib/i18n'
 import EmptyState from '../components/EmptyState'
 import { SkeletonTable } from '../components/Skeleton'
 import ConfirmDialog, { DoubleConfirmDialog } from '../components/ConfirmDialog'
-import DetailDrawer, { DrawerField } from '../components/DetailDrawer'
+import DetailDrawer, { DrawerField, DrawerSpec } from '../components/DetailDrawer'
 import ActiveToggle from '../components/ActiveToggle'
 import SellersList from '../components/SellersList'
 import PageHeader from '../components/PageHeader'
-import { IconAlertCircle, IconBuilding, IconUsers, IconClipboardEmpty, IconTrash } from '../components/Icons'
+import {
+  IconAlertCircle,
+  IconArrowLeft,
+  IconBuilding,
+  IconClipboardEmpty,
+  IconTrash,
+  IconUsers,
+} from '../components/Icons'
 
-function asArray<T>(data: T[] | { results: T[] }): T[] {
-  return Array.isArray(data) ? data : data.results
+const asArray = <T,>(data: T[] | { results: T[] }): T[] => (Array.isArray(data) ? data : data.results)
+const initials = (name: string) => name.slice(0, 2).toUpperCase()
+
+function StatusBadge({ active }: { active: boolean }) {
+  const { language } = useLanguage()
+  return (
+    <span className={`status-badge ${active ? 'active' : 'inactive'}`}>
+      {activeStatusLabel(language, active ? 'active' : 'inactive')}
+    </span>
+  )
 }
 
-/** Read-only branches list — creating a branch now lives on the Sozlamalar
- * (Settings) page (TenantSettingsPage's AddBranchForm), this section is
- * just for oversight + deactivating/deleting an existing one. */
-function BranchesSection({ branchLimit }: { branchLimit: number | null }) {
-  const { t, language } = useLanguage()
-  const [branches, setBranches] = useState<Branch[] | null>(null)
-
-  const [selected, setSelected] = useState<Branch | null>(null)
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  const load = () => {
-    apiFetch<Branch[] | { results: Branch[] }>('/api/branches/').then((data) => setBranches(asArray(data)))
-  }
-
-  useEffect(load, [])
-
-  const handleDelete = async () => {
-    if (!selected) return
-    setDeleting(true)
-    setDeleteError(null)
+/** DELETE-a-resource-then-refetch plumbing, shared by the branch and
+ * branch-admin oversight drawers (same three-state dance, different URL). */
+function useDelete(path: string, errorKey: StringKey, onDeleted: () => void) {
+  const { t } = useLanguage()
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const run = async () => {
+    if (!path) return
+    setPending(true)
+    setError(null)
     try {
-      await apiFetch(`/api/branches/${selected.id}/`, { method: 'DELETE' })
-      setConfirmDeleteOpen(false)
-      setSelected(null)
-      load()
+      await apiFetch(path, { method: 'DELETE' })
+      onDeleted()
     } catch (err) {
-      setDeleteError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_branch_delete_error'))
+      setError(err instanceof ApiError ? JSON.stringify(err.data) : t(errorKey))
     } finally {
-      setDeleting(false)
+      setPending(false)
     }
   }
+  return { run, pending, error }
+}
 
-  if (!branches) return <SkeletonTable rows={4} />
+function DeleteError({ message }: { message: string | null }) {
+  if (!message) return null
+  return (
+    <div className="error-banner" style={{ marginBottom: '0.9rem' }}>
+      <IconAlertCircle />
+      <span>{message}</span>
+    </div>
+  )
+}
+
+function EntityRow({
+  icon,
+  title,
+  sub,
+  active,
+  onClick,
+}: {
+  icon: ReactNode
+  title: string
+  sub?: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <div className="entity-row" onClick={onClick}>
+      <span className="entity-icon">{icon}</span>
+      <div className="entity-main">
+        <div className="entity-title">{title}</div>
+        {sub && <div className="entity-sub">{sub}</div>}
+      </div>
+      <span className="entity-side">
+        <StatusBadge active={active} />
+      </span>
+    </div>
+  )
+}
+
+/** Landing view: nothing but the branch list — every row drills into a
+ * single branch (BranchDetail below). */
+function BranchList({
+  tenant,
+  branches,
+  onOpen,
+}: {
+  tenant: Tenant
+  branches: Branch[] | null
+  onOpen: (branch: Branch) => void
+}) {
+  const { t } = useLanguage()
 
   return (
-    <div>
-      <p className="text-muted" style={{ marginTop: 0 }}>
-        {t('tenant_branch_limit_usage', {
-          used: branches.length,
-          limit: branchLimit === null ? '∞' : branchLimit,
-        })}
-      </p>
-      {branches.length === 0 ? (
+    <>
+      <PageHeader
+        eyebrow={t('eyebrow_tenant')}
+        title={tenant.name}
+        description={
+          branches
+            ? t('tenant_branch_limit_usage', {
+                used: branches.length,
+                limit: tenant.branch_limit === null ? '∞' : tenant.branch_limit,
+              })
+            : undefined
+        }
+      />
+
+      {!branches ? (
+        <SkeletonTable rows={4} />
+      ) : branches.length === 0 ? (
         <div className="table-card">
           <EmptyState
             icon={<IconClipboardEmpty />}
@@ -72,75 +133,141 @@ function BranchesSection({ branchLimit }: { branchLimit: number | null }) {
       ) : (
         <div className="entity-list">
           {branches.map((b) => (
-            <div key={b.id} className="entity-row" onClick={() => setSelected(b)}>
-              <span className="entity-icon">
-                <IconBuilding />
-              </span>
-              <div className="entity-main">
-                <div className="entity-title">{b.name}</div>
-                {b.address && <div className="entity-sub">{b.address}</div>}
-              </div>
-              <span className="entity-side">
-                <span className={`status-badge ${b.is_active ? 'active' : 'inactive'}`}>
-                  {activeStatusLabel(language, b.is_active ? 'active' : 'inactive')}
-                </span>
-              </span>
-            </div>
+            <EntityRow
+              key={b.id}
+              icon={<IconBuilding />}
+              title={b.name}
+              sub={b.address || undefined}
+              active={b.is_active}
+              onClick={() => onOpen(b)}
+            />
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+/** One branch: its admins on their own sunken slab, then its sellers.
+ * Activate/delete for the branch itself moved into the "Manage" drawer. */
+function BranchDetail({ branch, onBack }: { branch: Branch; onBack: () => void }) {
+  const { t, language } = useLanguage()
+  const queryClient = useQueryClient()
+
+  const { data: allManagers } = useQuery({
+    queryKey: ['branch-managers'],
+    queryFn: () =>
+      apiFetch<BranchManager[] | { results: BranchManager[] }>('/api/branch-managers/').then(asArray),
+  })
+  const managers = allManagers?.filter((m) => m.branch === branch.id) ?? null
+
+  const [manageOpen, setManageOpen] = useState(false)
+  const [confirmDeleteBranch, setConfirmDeleteBranch] = useState(false)
+  const [selectedManager, setSelectedManager] = useState<BranchManager | null>(null)
+  const [confirmDeleteManager, setConfirmDeleteManager] = useState(false)
+
+  const refetchBranches = () => queryClient.invalidateQueries({ queryKey: ['branches'] })
+  const refetchManagers = () => queryClient.invalidateQueries({ queryKey: ['branch-managers'] })
+
+  const branchDelete = useDelete(`/api/branches/${branch.id}/`, 'tenant_admin_branch_delete_error', () => {
+    refetchBranches()
+    onBack()
+  })
+  const managerDelete = useDelete(
+    selectedManager ? `/api/branch-managers/${selectedManager.id}/` : '',
+    'tenant_admin_manager_delete_error',
+    () => {
+      setConfirmDeleteManager(false)
+      setSelectedManager(null)
+      refetchManagers()
+    },
+  )
+
+  return (
+    <>
+      <button type="button" className="secondary" onClick={onBack} style={{ marginBottom: '1rem' }}>
+        <IconArrowLeft /> {t('tenant_branches_back')}
+      </button>
+
+      <PageHeader
+        eyebrow={t('branch_drawer_subtitle')}
+        title={branch.name}
+        description={branch.address || undefined}
+        actions={
+          <button type="button" className="secondary" onClick={() => setManageOpen(true)}>
+            {t('branch_manage_button')}
+          </button>
+        }
+      />
+
+      <section className="branch-admins">
+        <h2>
+          <IconUsers /> {t('section_heading_branch_managers')}
+        </h2>
+        {!managers ? (
+          <SkeletonTable rows={2} />
+        ) : managers.length === 0 ? (
+          <EmptyState icon={<IconUsers />} title={t('branch_managers_empty')} />
+        ) : (
+          <div className="entity-list">
+            {managers.map((m) => (
+              <EntityRow
+                key={m.id}
+                icon={<IconUsers />}
+                title={m.username}
+                sub={m.branch_name}
+                active={m.is_active}
+                onClick={() => setSelectedManager(m)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="section-head">
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <IconUsers /> {t('sellers_heading')}
+        </h2>
+      </div>
+      <SellersList canManage={false} branchId={branch.id} />
 
       <DetailDrawer
-        open={!!selected}
-        title={selected?.name ?? ''}
+        open={manageOpen}
+        title={branch.name}
         subtitle={t('branch_drawer_subtitle')}
-        avatarLabel={selected?.name.slice(0, 2).toUpperCase()}
-        onClose={() => setSelected(null)}
+        avatarLabel={initials(branch.name)}
+        onClose={() => setManageOpen(false)}
         footer={
           <>
-            {deleteError && (
-              <div className="error-banner" style={{ marginBottom: '0.9rem' }}>
-                <IconAlertCircle />
-                <span>{deleteError}</span>
-              </div>
-            )}
-            <button type="button" className="danger" style={{ width: '100%' }} onClick={() => setConfirmDeleteOpen(true)}>
+            <DeleteError message={branchDelete.error} />
+            <button
+              type="button"
+              className="danger"
+              style={{ width: '100%' }}
+              onClick={() => setConfirmDeleteBranch(true)}
+            >
               <IconTrash />
               {t('branch_delete_button')}
             </button>
           </>
         }
       >
-        {selected && (
-          <>
-            <DrawerField label={t('field_address')} value={selected.address || '—'} />
-            <DrawerField
-              label={t('status_label')}
-              value={
-                <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
-                  {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
-                </span>
-              }
-            />
-            <ActiveToggle<Branch>
-              endpoint={`/api/branches/${selected.id}/`}
-              isActive={selected.is_active}
-              onSaved={(updated) => {
-                setSelected(updated)
-                setBranches((prev) => prev?.map((b) => (b.id === updated.id ? updated : b)) ?? prev)
-              }}
-            />
-          </>
-        )}
+        <DrawerField label={t('field_address')} value={branch.address || '—'} />
+        <DrawerField label={t('status_label')} value={<StatusBadge active={branch.is_active} />} />
+        <ActiveToggle<Branch>
+          endpoint={`/api/branches/${branch.id}/`}
+          isActive={branch.is_active}
+          onSaved={refetchBranches}
+        />
       </DetailDrawer>
 
       <DoubleConfirmDialog
-        open={confirmDeleteOpen}
+        open={confirmDeleteBranch}
         step1={{
           title: t('branch_delete_step1_title'),
           description: (
             <>
-              <strong>{selected?.name}</strong>
+              <strong>{branch.name}</strong>
               {t('branch_delete_step1_description')}
             </>
           ),
@@ -149,190 +276,118 @@ function BranchesSection({ branchLimit }: { branchLimit: number | null }) {
           title: t('delete_all_transactions_title'),
           description: (
             <>
-              <strong>{selected?.name}</strong>
+              <strong>{branch.name}</strong>
               {t('branch_delete_step2_description')}
             </>
           ),
         }}
-        confirming={deleting}
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDeleteOpen(false)}
+        confirming={branchDelete.pending}
+        onConfirm={branchDelete.run}
+        onCancel={() => setConfirmDeleteBranch(false)}
       />
-    </div>
-  )
-}
-
-/** Read-only branch admins list — assigning a new one now lives on the
- * Sozlamalar page (TenantSettingsPage's AddBranchManagerForm). */
-function BranchManagersSection() {
-  const { t, language } = useLanguage()
-  const [managers, setManagers] = useState<BranchManager[] | null>(null)
-
-  const [selected, setSelected] = useState<BranchManager | null>(null)
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  const loadManagers = () => {
-    apiFetch<BranchManager[] | { results: BranchManager[] }>('/api/branch-managers/').then((data) =>
-      setManagers(asArray(data))
-    )
-  }
-
-  useEffect(loadManagers, [])
-
-  const handleDelete = async () => {
-    if (!selected) return
-    setDeleting(true)
-    setDeleteError(null)
-    try {
-      await apiFetch(`/api/branch-managers/${selected.id}/`, { method: 'DELETE' })
-      setConfirmDeleteOpen(false)
-      setSelected(null)
-      loadManagers()
-    } catch (err) {
-      setDeleteError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_admin_manager_delete_error'))
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  if (!managers) return <SkeletonTable rows={4} />
-
-  return (
-    <div>
-      {managers.length === 0 ? (
-        <div className="table-card">
-          <EmptyState icon={<IconUsers />} title={t('tenant_admin_managers_empty_title')} />
-        </div>
-      ) : (
-        <div className="entity-list">
-          {managers.map((m) => (
-            <div key={m.id} className="entity-row" onClick={() => setSelected(m)}>
-              <span className="entity-icon">
-                <IconUsers />
-              </span>
-              <div className="entity-main">
-                <div className="entity-title">{m.username}</div>
-                <div className="entity-sub">{m.branch_name}</div>
-              </div>
-              <span className="entity-side">
-                <span className={`status-badge ${m.is_active ? 'active' : 'inactive'}`}>
-                  {activeStatusLabel(language, m.is_active ? 'active' : 'inactive')}
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
 
       <DetailDrawer
-        open={!!selected}
-        title={selected?.username ?? ''}
+        open={!!selectedManager}
+        title={selectedManager ? selectedManager.full_name || selectedManager.username : ''}
         subtitle={t('manager_drawer_subtitle')}
-        avatarLabel={selected?.username.slice(0, 2).toUpperCase()}
-        onClose={() => setSelected(null)}
+        avatarLabel={
+          selectedManager ? initials(selectedManager.full_name || selectedManager.username) : undefined
+        }
+        onClose={() => setSelectedManager(null)}
         footer={
           <>
-            {deleteError && (
-              <div className="error-banner" style={{ marginBottom: '0.9rem' }}>
-                <IconAlertCircle />
-                <span>{deleteError}</span>
-              </div>
-            )}
-            <button type="button" className="danger" style={{ width: '100%' }} onClick={() => setConfirmDeleteOpen(true)}>
+            <DeleteError message={managerDelete.error} />
+            <button
+              type="button"
+              className="danger"
+              style={{ width: '100%' }}
+              onClick={() => setConfirmDeleteManager(true)}
+            >
               <IconTrash />
               {t('manager_delete_button')}
             </button>
           </>
         }
       >
-        {selected && (
+        {selectedManager && (
           <>
-            <DrawerField label={t('field_login')} value={selected.username} />
-            <DrawerField label={t('field_branch')} value={selected.branch_name} />
-            <DrawerField
-              label={t('status_label')}
-              value={
-                <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
-                  {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
-                </span>
-              }
+            <DrawerSpec
+              rows={[
+                { label: t('field_full_name'), value: selectedManager.full_name || '—' },
+                { label: t('field_login'), value: selectedManager.username, mono: true },
+                { label: t('field_phone'), value: selectedManager.phone || '—', mono: true },
+                { label: t('field_role'), value: roleLabel(language, selectedManager.role) },
+                { label: t('field_branch'), value: selectedManager.branch_name },
+                { label: t('status_label'), value: <StatusBadge active={selectedManager.is_active} /> },
+              ]}
+            />
+            <ActiveToggle<BranchManager>
+              endpoint={`/api/branch-managers/${selectedManager.id}/`}
+              isActive={selectedManager.is_active}
+              onSaved={(updated) => {
+                setSelectedManager(updated)
+                refetchManagers()
+              }}
             />
           </>
         )}
       </DetailDrawer>
 
       <ConfirmDialog
-        open={confirmDeleteOpen}
+        open={confirmDeleteManager}
         title={t('manager_delete_title')}
         description={
           <>
-            <strong>{selected?.username}</strong>
+            <strong>{selectedManager && (selectedManager.full_name || selectedManager.username)}</strong>
             {t('login_will_lose_access')}
           </>
         }
         confirmLabel={t('delete_confirm')}
         tone="danger"
-        confirming={deleting}
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDeleteOpen(false)}
+        confirming={managerDelete.pending}
+        onConfirm={managerDelete.run}
+        onCancel={() => setConfirmDeleteManager(false)}
       />
-    </div>
+    </>
   )
 }
 
-/** The tenant admin's "Dorixona" overview: branches, branch admins, and
- * sellers, all read-only listings with drill-in drawers for oversight —
- * renaming the pharmacy, setting the rate, adding branches/admins all
- * moved to the separate Sozlamalar page (TenantSettingsPage). */
+/** The tenant admin's "Dorixona" page: a plain branch list that drills
+ * into one branch at a time (its admins, then its sellers). Renaming the
+ * pharmacy, the rate, adding branches/admins all live on Sozlamalar. */
 export default function TenantAdminPage() {
   const { user } = useAuth()
-  const { t } = useLanguage()
-  const [tenant, setTenant] = useState<Tenant | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [openBranchId, setOpenBranchId] = useState<number | null>(null)
 
-  useEffect(() => {
-    if (!user?.tenantId) return
-    apiFetch<Tenant>(`/api/tenants/${user.tenantId}/`)
-      .then(setTenant)
-      .catch((err) => setError(err.message))
-  }, [user?.tenantId])
+  const tenantQuery = useQuery({
+    queryKey: ['tenant', user?.tenantId],
+    queryFn: () => apiFetch<Tenant>(`/api/tenants/${user!.tenantId}/`),
+    enabled: !!user?.tenantId,
+  })
+  const branchesQuery = useQuery({
+    queryKey: ['branches'],
+    queryFn: () => apiFetch<Branch[] | { results: Branch[] }>('/api/branches/').then(asArray),
+  })
 
-  if (error) {
+  if (tenantQuery.error) {
     return (
       <div className="error-banner">
         <IconAlertCircle />
-        <span>{error}</span>
+        <span>{tenantQuery.error.message}</span>
       </div>
     )
   }
-  if (!tenant) return <SkeletonTable rows={6} />
+  if (!tenantQuery.data) return <SkeletonTable rows={6} />
 
-  return (
-    <div>
-      <PageHeader eyebrow={t('eyebrow_tenant')} title={tenant.name} />
+  const openBranch = branchesQuery.data?.find((b) => b.id === openBranchId) ?? null
 
-      <div className="section-head" style={{ marginTop: 0 }}>
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <IconBuilding /> {t('label_branches')}
-        </h2>
-      </div>
-      <BranchesSection branchLimit={tenant.branch_limit} />
-
-      <div className="section-head">
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <IconUsers /> {t('section_heading_branch_managers')}
-        </h2>
-      </div>
-      <BranchManagersSection />
-
-      <div className="section-head">
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <IconUsers /> {t('sellers_heading')}
-        </h2>
-      </div>
-      <SellersList canManage={false} />
-    </div>
+  return openBranch ? (
+    <BranchDetail branch={openBranch} onBack={() => setOpenBranchId(null)} />
+  ) : (
+    <BranchList
+      tenant={tenantQuery.data}
+      branches={branchesQuery.data ?? null}
+      onOpen={(b) => setOpenBranchId(b.id)}
+    />
   )
 }

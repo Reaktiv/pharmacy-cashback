@@ -64,6 +64,9 @@ export interface BranchManager {
   branch: number
   branch_name: string
   is_active: boolean
+  full_name: string
+  phone: string
+  role: Role
 }
 
 export interface TenantAdmin {
@@ -72,6 +75,9 @@ export interface TenantAdmin {
   tenant: number
   tenant_name: string
   is_active: boolean
+  full_name: string
+  phone: string
+  role: Role
 }
 
 export interface BroadcastMedia {

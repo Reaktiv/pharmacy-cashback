@@ -1,9 +1,9 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { apiFetch, ApiError } from '../api/client'
 import type { BranchReportRow, DailyReportRow, Tenant, TenantAdmin, TenantBot } from '../api/types'
-import { activeStatusLabel } from '../lib/labels'
+import { activeStatusLabel, roleLabel } from '../lib/labels'
 import { useLanguage } from '../lib/i18n'
 import { weekOverWeekTrend } from '../lib/trend'
 import PageHeader from '../components/PageHeader'
@@ -13,7 +13,7 @@ import EmptyState from '../components/EmptyState'
 import { SkeletonStatGrid, SkeletonTable } from '../components/Skeleton'
 import { DualBarChart } from '../components/Charts'
 import ConfirmDialog, { DoubleConfirmDialog } from '../components/ConfirmDialog'
-import DetailDrawer, { DrawerField } from '../components/DetailDrawer'
+import DetailDrawer, { DrawerSpec } from '../components/DetailDrawer'
 import ActiveToggle from '../components/ActiveToggle'
 import {
   IconAlertCircle,
@@ -391,9 +391,16 @@ function BranchLimitSection({
   )
 }
 
-function TenantAdminsSection({ tenantId }: { tenantId: number }) {
+function TenantAdminsSection({
+  tenantId,
+  admins,
+  reload,
+}: {
+  tenantId: number
+  admins: TenantAdmin[] | null
+  reload: () => void
+}) {
   const { t, language } = useLanguage()
-  const [admins, setAdmins] = useState<TenantAdmin[] | null>(null)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -402,14 +409,6 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-
-  const load = () => {
-    apiFetch<TenantAdmin[] | { results: TenantAdmin[] }>(`/api/tenant-admins/?tenant=${tenantId}`).then(
-      (data) => setAdmins(asArray(data)),
-    )
-  }
-
-  useEffect(load, [tenantId])
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault()
@@ -421,7 +420,7 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
       })
       setUsername('')
       setPassword('')
-      load()
+      reload()
     } catch (err) {
       setError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_admin_create_error'))
     }
@@ -435,7 +434,7 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
       await apiFetch(`/api/tenant-admins/${selected.id}/`, { method: 'DELETE' })
       setConfirmDeleteOpen(false)
       setSelected(null)
-      load()
+      reload()
     } catch (err) {
       setDeleteError(err instanceof ApiError ? JSON.stringify(err.data) : t('tenant_detail_admin_delete_error'))
     } finally {
@@ -504,9 +503,9 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
 
       <DetailDrawer
         open={!!selected}
-        title={selected?.username ?? ''}
+        title={selected ? selected.full_name || selected.username : ''}
         subtitle={t('admin_drawer_subtitle')}
-        avatarLabel={selected?.username.slice(0, 2).toUpperCase()}
+        avatarLabel={selected ? (selected.full_name || selected.username).slice(0, 2).toUpperCase() : undefined}
         onClose={() => setSelected(null)}
         footer={
           <>
@@ -525,14 +524,30 @@ function TenantAdminsSection({ tenantId }: { tenantId: number }) {
       >
         {selected && (
           <>
-            <DrawerField label={t('field_login')} value={selected.username} />
-            <DrawerField
-              label={t('status_label')}
-              value={
-                <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
-                  {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
-                </span>
-              }
+            <DrawerSpec
+              rows={[
+                { label: t('field_full_name'), value: selected.full_name || '—' },
+                { label: t('field_login'), value: selected.username, mono: true },
+                { label: t('field_phone'), value: selected.phone || '—', mono: true },
+                { label: t('field_role'), value: roleLabel(language, selected.role) },
+                { label: t('th_tenant'), value: selected.tenant_name },
+                {
+                  label: t('status_label'),
+                  value: (
+                    <span className={`status-badge ${selected.is_active ? 'active' : 'inactive'}`}>
+                      {activeStatusLabel(language, selected.is_active ? 'active' : 'inactive')}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+            <ActiveToggle<TenantAdmin>
+              endpoint={`/api/tenant-admins/${selected.id}/`}
+              isActive={selected.is_active}
+              onSaved={(updated) => {
+                setSelected(updated)
+                reload()
+              }}
             />
           </>
         )}
@@ -565,10 +580,21 @@ export default function TenantDetailPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [branches, setBranches] = useState<BranchReportRow[] | null>(null)
   const [daily, setDaily] = useState<DailyReportRow[] | null>(null)
+  const [admins, setAdmins] = useState<TenantAdmin[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  // Lifted out of TenantAdminsSection so the admin names can also headline
+  // the top of the page — one fetch, two render sites.
+  const loadAdmins = useCallback(() => {
+    if (!id) return
+    apiFetch<TenantAdmin[] | { results: TenantAdmin[] }>(`/api/tenant-admins/?tenant=${id}`)
+      .then((data) => setAdmins(asArray(data)))
+      .catch(() => setAdmins([]))
+  }, [id])
+  useEffect(loadAdmins, [loadAdmins])
 
   const handleDelete = async () => {
     if (!tenant) return
@@ -641,30 +667,17 @@ export default function TenantDetailPage() {
           rate: tenant.cashback_rate,
           status: activeStatusLabel(language, tenant.is_active ? 'active' : 'inactive'),
         })}
-        actions={
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem' }}>
-            <ActiveToggle<Tenant>
-              endpoint={`/api/tenants/${tenant.id}/`}
-              isActive={tenant.is_active}
-              onSaved={(updated) => {
-                setTenant(updated)
-                // The dashboard's cached ['cross-tenant-report'] status
-                // badge for this tenant would otherwise stay stale.
-                queryClient.invalidateQueries({ queryKey: ['cross-tenant-report'] })
-              }}
-            />
-            <button type="button" className="ghost danger" onClick={() => setDeleteOpen(true)}>
-              <IconTrash />
-              {t('tenant_detail_delete_button')}
-            </button>
-          </div>
-        }
       />
 
-      {deleteError && (
-        <div className="error-banner">
-          <IconAlertCircle />
-          <span>{deleteError}</span>
+      {admins && admins.length > 0 && (
+        <div className="owner-strip">
+          <span className="owner-strip-label">{t('tenant_detail_admins_card_heading')}</span>
+          {admins.map((a) => (
+            <span key={a.id} className="owner-chip">
+              <IconUsers />
+              {a.full_name || a.username}
+            </span>
+          ))}
         </div>
       )}
 
@@ -693,6 +706,13 @@ export default function TenantDetailPage() {
         />
         <StatCard icon={<IconBuilding />} label={t('label_branches')} value={branches.length} tone="teal" />
       </div>
+
+      <div className="section-head">
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <IconUsers /> {t('tenant_detail_admins_card_heading')}
+        </h2>
+      </div>
+      <TenantAdminsSection tenantId={tenant.id} admins={admins} reload={loadAdmins} />
 
       <div className="card">
         <div className="card-title-row">
@@ -732,13 +752,6 @@ export default function TenantDetailPage() {
       </div>
 
       <div className="section-head">
-        <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <IconUsers /> {t('tenant_detail_admins_card_heading')}
-        </h2>
-      </div>
-      <TenantAdminsSection tenantId={tenant.id} />
-
-      <div className="section-head">
         <h2>{t('label_branches')}</h2>
       </div>
       {branches.length === 0 ? (
@@ -769,6 +782,45 @@ export default function TenantDetailPage() {
           seriesALabel={t('label_earned')}
           seriesBLabel={t('label_spent')}
         />
+      </div>
+
+      <div className="section-head">
+        <h2>{t('tenant_danger_zone_heading')}</h2>
+      </div>
+      <div className="danger-zone">
+        <div className="danger-zone-row">
+          <div>
+            <div className="danger-zone-title">{t('status_label')}</div>
+            <p className="danger-zone-hint">{t('tenant_deactivate_hint')}</p>
+          </div>
+          <ActiveToggle<Tenant>
+            endpoint={`/api/tenants/${tenant.id}/`}
+            isActive={tenant.is_active}
+            confirmDescription={t('tenant_deactivate_hint')}
+            onSaved={(updated) => {
+              setTenant(updated)
+              // The dashboard's cached ['cross-tenant-report'] status badge
+              // for this tenant would otherwise stay stale.
+              queryClient.invalidateQueries({ queryKey: ['cross-tenant-report'] })
+            }}
+          />
+        </div>
+        <div className="danger-zone-row">
+          <div>
+            <div className="danger-zone-title">{t('tenant_detail_delete_button')}</div>
+            <p className="danger-zone-hint">{t('tenant_delete_hint')}</p>
+          </div>
+          <button type="button" className="ghost danger" onClick={() => setDeleteOpen(true)}>
+            <IconTrash />
+            {t('tenant_detail_delete_button')}
+          </button>
+        </div>
+        {deleteError && (
+          <div className="error-banner" style={{ marginTop: '0.9rem' }}>
+            <IconAlertCircle />
+            <span>{deleteError}</span>
+          </div>
+        )}
       </div>
 
       <DoubleConfirmDialog

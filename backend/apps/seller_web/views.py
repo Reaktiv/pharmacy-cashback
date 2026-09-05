@@ -9,6 +9,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.models import UserProfile
 from apps.accounts.ratelimit import RateLimitExceededError
+from apps.tenants.access import tenant_is_blocked
 from apps.customers.models import PendingCashback
 from apps.ledger.models import Transaction
 from apps.ledger.services import (
@@ -64,12 +65,25 @@ def seller_required(view_func):
     def wrapper(request, *args, **kwargs):
         profile = getattr(request.user, "profile", None)
         seller = getattr(request.user, "seller_profile", None)
+        language = get_language(request)
         if profile is None or profile.role != UserProfile.Role.SELLER or seller is None:
-            language = get_language(request)
             return render(
                 request,
                 "seller_web/forbidden.html",
                 {"s": strings_for(language), "language": language, "languages": LANGUAGES},
+                status=403,
+            )
+        # A superadmin-deactivated tenant locks out its sellers too.
+        if tenant_is_blocked(profile):
+            return render(
+                request,
+                "seller_web/forbidden.html",
+                {
+                    "s": strings_for(language),
+                    "language": language,
+                    "languages": LANGUAGES,
+                    "reason": strings_for(language)["tenant_blocked_subtitle"],
+                },
                 status=403,
             )
         request.seller = seller

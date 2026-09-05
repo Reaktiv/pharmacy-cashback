@@ -151,6 +151,18 @@ export default function Layout() {
       {menuOpen && <div className="sidebar-backdrop" onClick={() => setMenuOpen(false)} />}
 
       <aside className={`sidebar${menuOpen ? ' open' : ' closed'}`}>
+        <div className="sidebar-top">
+          <button
+            type="button"
+            className="sidebar-close"
+            onClick={() => setMenuOpen(false)}
+            aria-label={t('menu_toggle_hint')}
+            title={t('menu_toggle_hint')}
+          >
+            <IconX />
+          </button>
+        </div>
+
         <nav className="sidebar-nav">
           <div className="nav-group-label">{t('nav_group_label')}</div>
           {links.map((link) => (
@@ -184,15 +196,17 @@ export default function Layout() {
       <div className="app-main">
         <header className="app-topbar">
           <div className="app-topbar-left">
-            <button
-              type="button"
-              className="hamburger-btn"
-              onClick={() => setMenuOpen((open) => !open)}
-              aria-label={t('menu_toggle_hint')}
-              title={t('menu_toggle_hint')}
-            >
-              {menuOpen ? <IconX /> : <IconMenu />}
-            </button>
+            {!menuOpen && (
+              <button
+                type="button"
+                className="hamburger-btn"
+                onClick={() => setMenuOpen(true)}
+                aria-label={t('menu_toggle_hint')}
+                title={t('menu_toggle_hint')}
+              >
+                <IconMenu />
+              </button>
+            )}
             <span className="app-topbar-title">{pageTitle}</span>
           </div>
         </header>
