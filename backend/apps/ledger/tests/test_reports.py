@@ -5,7 +5,6 @@ import pytest
 from django.utils import timezone
 
 from apps.ledger.models import Transaction
-
 from apps.ledger.reports import (
     get_branch_report,
     get_cross_tenant_dashboard,
@@ -404,7 +403,10 @@ def test_seller_daily_breakdown_groups_by_day_newest_first(
     assert rows[1]["txn_count"] == 1
     assert rows[1]["cashback_earned"] == Decimal("5000.00")
 
-    assert {today_txn1.pk, today_txn2.pk} <= {t.pk for t in Transaction.objects.all_tenants().filter(seller=seller)}
+    seller_txn_pks = {
+        t.pk for t in Transaction.objects.all_tenants().filter(seller=seller)
+    }
+    assert {today_txn1.pk, today_txn2.pk} <= seller_txn_pks
 
 
 @pytest.mark.django_db

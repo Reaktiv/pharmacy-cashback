@@ -9,7 +9,6 @@ from django.utils.http import url_has_allowed_host_and_scheme
 
 from apps.accounts.models import UserProfile
 from apps.accounts.ratelimit import RateLimitExceededError
-from apps.tenants.access import tenant_is_blocked
 from apps.customers.models import PendingCashback
 from apps.ledger.models import Transaction
 from apps.ledger.services import (
@@ -24,6 +23,7 @@ from apps.ledger.services import (
 )
 from apps.seller_web.forms import EarnForm, RedeemForm
 from apps.seller_web.i18n import LANGUAGE_COOKIE, LANGUAGES, get_language, strings_for, t
+from apps.tenants.access import tenant_is_blocked
 
 # Aligned with the session cookie's own lifetime expectations — long enough
 # that picking a language once sticks around, short enough to naturally
