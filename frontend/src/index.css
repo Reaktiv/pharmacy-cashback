@@ -444,16 +444,31 @@ a:hover {
     padding 0.2s var(--ease);
 }
 
+/* Collapsed state is an icon-only rail, not a fully hidden sidebar — nav
+ * icons stay clickable, only the text labels disappear. */
 .sidebar.closed {
-  width: 0;
-  padding-left: 0;
-  padding-right: 0;
-  border-right: none;
+  width: 68px;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
 }
 
-.sidebar.closed > * {
-  opacity: 0;
-  pointer-events: none;
+.sidebar.closed .sidebar-top {
+  justify-content: center;
+}
+
+.sidebar.closed .nav-group-label,
+.sidebar.closed .nav-item-label,
+.sidebar.closed .sidebar-profile-trigger-name,
+.sidebar.closed .sidebar-logout-label {
+  display: none;
+}
+
+.sidebar.closed .nav-item,
+.sidebar.closed .sidebar-profile-trigger,
+.sidebar.closed .sidebar-logout {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 /* Close (×) affordance living inside the sidebar itself — the topbar button
@@ -492,7 +507,10 @@ a:hover {
 }
 
 .hamburger-btn {
-  display: inline-flex;
+  /* Hidden on desktop — the collapsed sidebar rail keeps its own toggle
+   * button, so a second one in the topbar would be redundant. Only the
+   * mobile off-canvas drawer (which hides the rail entirely) needs it. */
+  display: none;
   align-items: center;
   justify-content: center;
   width: 40px;
@@ -2624,6 +2642,10 @@ tr.expanded-row:hover td {
     background: rgba(20, 21, 32, 0.45);
     z-index: 999;
     animation: backdrop-in 0.15s var(--ease);
+  }
+
+  .hamburger-btn {
+    display: inline-flex;
   }
 }
 

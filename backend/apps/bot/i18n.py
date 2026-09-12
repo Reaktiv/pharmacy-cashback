@@ -79,6 +79,26 @@ _STRINGS: dict[str, dict[Language, str]] = {
         "en": "You're registered! 🎉",
         "ru": "Вы зарегистрированы! 🎉",
     },
+    # Registration refused: the phone/account is already bound to someone
+    # else (apps.bot.services.RegistrationOwnershipError). Deliberately
+    # says nothing about the other account — the person reading this may
+    # be an attacker probing which numbers are registered.
+    "phone_already_registered": {
+        "uz": "Bu telefon raqami boshqa Telegram akkauntiga biriktirilgan. "
+        "Agar bu haqiqatan ham sizning raqamingiz bo'lsa, dorixonaga murojaat qiling.",
+        "en": "This phone number is already linked to another Telegram account. "
+        "If it really is your number, please contact the pharmacy.",
+        "ru": "Этот номер телефона уже привязан к другому Telegram-аккаунту. "
+        "Если это действительно ваш номер, обратитесь в аптеку.",
+    },
+    "account_already_registered": {
+        "uz": "Sizning Telegram akkauntingiz allaqachon boshqa telefon raqami bilan "
+        "ro'yxatdan o'tgan. Raqamni o'zgartirish uchun dorixonaga murojaat qiling.",
+        "en": "Your Telegram account is already registered with a different phone "
+        "number. Please contact the pharmacy to change it.",
+        "ru": "Ваш Telegram-аккаунт уже зарегистрирован с другим номером телефона. "
+        "Обратитесь в аптеку, чтобы изменить его.",
+    },
     "claimed_amount": {
         "uz": "Avvalgi xaridlaringizdan {amount} ball hisobingizga qo'shildi.",
         "en": "{amount} points from your earlier purchases were added to your balance.",

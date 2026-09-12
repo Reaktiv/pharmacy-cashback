@@ -172,7 +172,23 @@ async def on_contact(message: Message, tenant, bot_row, state: FSMContext) -> No
     data = await state.get_data()
     language = data.get("language", DEFAULT_LANGUAGE)
 
-    if contact.user_id and contact.user_id != message.from_user.id:
+    # A bare `!=`, deliberately not the previous
+    # `contact.user_id and contact.user_id != ...`. Contact.user_id is
+    # Optional and Telegram only populates it when the shared contact is
+    # itself a Telegram account, so on a forwarded address-book contact it
+    # arrives as None and that `and` short-circuited to *pass* — letting
+    # anyone assert any phone number they liked and then claim its
+    # PendingCashback (and, via handle_registration, its whole existing
+    # balance). `None != <sender id>` is True, so this rejects the
+    # unverified case along with the mismatched one.
+    #
+    # This is the ONLY point where phone ownership is established: the
+    # request_contact button (the only supported path — see
+    # apps/bot/CLAUDE.md) always yields the sender's own contact, carrying
+    # a user_id equal to their id and a phone number Telegram itself
+    # verified. Everything downstream trusts that, so it must not be
+    # weakened.
+    if contact.user_id != message.from_user.id:
         await message.answer(t(language, "contact_wrong_owner"))
         return
 
@@ -197,16 +213,29 @@ async def on_consent_accept(callback: CallbackQuery, tenant, bot_row, state: FSM
         await callback.answer(t(language, "session_expired"), show_alert=True)
         return
 
-    text = await sync_to_async(bot_services.handle_registration, thread_sensitive=True)(
-        tenant=tenant,
-        telegram_id=callback.from_user.id,
-        phone=phone,
-        full_name=full_name,
-        language=language,
-    )
-    await state.clear()
-
     assert callback.message is not None and hasattr(callback.message, "answer")
+
+    try:
+        text = await sync_to_async(bot_services.handle_registration, thread_sensitive=True)(
+            tenant=tenant,
+            telegram_id=callback.from_user.id,
+            phone=phone,
+            full_name=full_name,
+            language=language,
+        )
+    except bot_services.RegistrationOwnershipError as exc:
+        # The phone (or this account) belongs to someone else — nothing was
+        # written and no PendingCashback was claimed. Drop the pending phone
+        # from FSM state so a later consent tap can't replay it, and show
+        # the reason WITHOUT the main menu: the customer is not registered,
+        # so offering Balans/Ballarni ishlatish would just dead-end in
+        # "not_registered" on the next tap.
+        await state.clear()
+        await callback.message.answer(str(exc))
+        await callback.answer()
+        return
+
+    await state.clear()
     await callback.message.answer(text, reply_markup=_main_menu_keyboard(language))
     await callback.answer()
 

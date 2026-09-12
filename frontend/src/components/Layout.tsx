@@ -155,11 +155,11 @@ export default function Layout() {
           <button
             type="button"
             className="sidebar-close"
-            onClick={() => setMenuOpen(false)}
+            onClick={() => setMenuOpen(!menuOpen)}
             aria-label={t('menu_toggle_hint')}
             title={t('menu_toggle_hint')}
           >
-            <IconX />
+            {menuOpen ? <IconX /> : <IconMenu />}
           </button>
         </div>
 
@@ -172,23 +172,34 @@ export default function Layout() {
               end
               onClick={closeMenuOnMobile}
               className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+              title={t(link.labelKey)}
             >
               {link.icon}
-              {t(link.labelKey)}
+              <span className="nav-item-label">{t(link.labelKey)}</span>
             </NavLink>
           ))}
         </nav>
 
         <div className="sidebar-footer">
-          <button type="button" className="sidebar-profile-trigger" onClick={() => setProfileOpen(true)}>
+          <button
+            type="button"
+            className="sidebar-profile-trigger"
+            onClick={() => setProfileOpen(true)}
+            title={t('profile_link_label')}
+          >
             <span className={`sidebar-profile-avatar${avatarUrl ? ' has-image' : ''}`}>
               {avatarUrl ? <img src={avatarUrl} alt="" /> : displayName ? initials(displayName) : <IconUser />}
             </span>
             <span className="sidebar-profile-trigger-name">{t('profile_link_label')}</span>
           </button>
-          <button type="button" className="sidebar-logout" onClick={() => setLogoutOpen(true)}>
+          <button
+            type="button"
+            className="sidebar-logout"
+            onClick={() => setLogoutOpen(true)}
+            title={t('logout')}
+          >
             <IconLogout />
-            {t('logout')}
+            <span className="sidebar-logout-label">{t('logout')}</span>
           </button>
         </div>
       </aside>

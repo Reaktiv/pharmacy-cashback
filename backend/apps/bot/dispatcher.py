@@ -31,12 +31,55 @@ may abandon a spare Redis connection per switch, not leak indefinitely.
 import asyncio
 
 from aiogram import Dispatcher
+from aiogram.fsm.storage.base import DefaultKeyBuilder
 from aiogram.fsm.storage.redis import RedisStorage
 from django.conf import settings
 
 from apps.bot import handlers
 
 _dispatcher_cache: dict[asyncio.AbstractEventLoop, Dispatcher] = {}
+
+
+def _key_builder() -> DefaultKeyBuilder:
+    """FSM keys MUST carry the bot id — this is a multibot process
+    (CLAUDE.md §4/§7a), and without it every tenant's bot shares one state
+    bucket per Telegram user.
+
+    aiogram's `DefaultKeyBuilder` defaults to `with_bot_id=False`, and
+    `RedisStorage.__init__` falls back to exactly that default when no
+    `key_builder` is passed — which is what this code used to do. The
+    resulting Redis key is `fsm:<chat_id>:<user_id>:<part>`, with
+    `StorageKey.bot_id` silently dropped even though
+    `FSMContextMiddleware.get_context` does populate it from `bot.id`.
+    Under the default `FSMStrategy.USER_IN_CHAT` a private chat has
+    `chat_id == user_id`, so one customer talking to two different
+    pharmacies' bots resolved to one and the same key — verified against
+    the installed aiogram 3.15.0: both tenants produced `fsm:111:111:data`.
+    That leaked the phone/full_name captured mid-registration in one
+    tenant into the other's registration flow, let a `RedeemStates`
+    transition set by one bot capture the next message sent to the other,
+    and made `state.clear()` in either bot wipe both.
+    `bot.id` is parsed from the tenant's own bot token, so it is a real
+    per-tenant discriminator here, not a cosmetic prefix.
+
+    Passing the same builder to the storage also covers the lock keys:
+    `RedisStorage.create_isolation()` hands its own `key_builder` to
+    `RedisEventIsolation`. (This `Dispatcher` is built without an
+    `events_isolation`, so aiogram uses `DisabledEventIsolation` and no
+    lock key is taken today — this just means the fix stays correct if
+    isolation is ever switched on.)
+
+    DEPLOY NOTE: this changes the key namespace, so FSM state in flight at
+    deploy time is not carried over. That is a deliberate, graceful reset,
+    not data loss — a customer mid-registration falls into
+    `on_consent_accept`'s existing "no phone in state" branch and is told
+    to send /start again; nothing durable lives in FSM state (the ledger,
+    Customer and PendingCashback rows are all in Postgres). The orphaned
+    `fsm:<chat_id>:<user_id>:*` keys are written without a TTL, so they
+    stay in Redis until deleted; they are inert, and clearing them is a
+    housekeeping step, not part of this fix.
+    """
+    return DefaultKeyBuilder(with_bot_id=True)
 
 
 def build_dispatcher() -> Dispatcher:
@@ -46,7 +89,7 @@ def build_dispatcher() -> Dispatcher:
         return cached
 
     _dispatcher_cache.clear()  # drop whatever loop's entry we had before
-    storage = RedisStorage.from_url(settings.REDIS_URL)
+    storage = RedisStorage.from_url(settings.REDIS_URL, key_builder=_key_builder())
     dp = Dispatcher(storage=storage)
     handlers.register_handlers(dp)
     _dispatcher_cache[loop] = dp
