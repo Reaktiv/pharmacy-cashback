@@ -2,9 +2,9 @@
 {% block body %}
 <div class="top-bar">
   <div class="brand">
-    <span class="brand-mark{% if has_tenant_logo %} has-image{% endif %}" aria-hidden="true">
-      {% if has_tenant_logo %}
-        <img src="{% url 'seller_web:tenant_logo' %}" alt="" class="brand-mark-img">
+    <span class="brand-mark{% if has_platform_logo %} has-image{% endif %}" aria-hidden="true">
+      {% if has_platform_logo %}
+        <img src="/api/branding/logo/" alt="" class="brand-mark-img">
       {% else %}
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 4v6.5M12 13.5V20M4 12h6.5M13.5 12H20" stroke="white" stroke-width="2.6" stroke-linecap="round"/>
@@ -12,7 +12,7 @@
       {% endif %}
     </span>
     <div>
-      <h1>{{ seller.branch.tenant.name }} — {{ seller.branch.name }}</h1>
+      <h1>{{ platform_name }}</h1>
       <p class="seller-name">{{ s.seller_label }}: {{ seller.full_name }}</p>
     </div>
   </div>

@@ -89,7 +89,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "5174:5173"
+      - "5174:5160"
     environment:
       VITE_API_PROXY_TARGET: http://web:8000
     depends_on:

@@ -61,7 +61,7 @@ Django API/web server, a Celery worker, Celery beat (scheduled jobs — see
 
 - Backend API: http://localhost:8001 (host port 8001 → container port 8000)
 - Health check: http://localhost:8001/healthz/
-- Admin panel (React): http://localhost:5174 (host port 5174 → container 5173)
+- Admin panel (React): http://localhost:5174 (host port 5174 → container 5160)
 - Django admin (low-level superadmin access): http://localhost:8001/admin/
 - Postgres: exposed on host port 5433 (→ container 5432)
 - Redis: exposed on host port 6380 (→ container 6379)
@@ -99,16 +99,20 @@ a real one.
 
 ## Running locally against a `.venv` (alternative workflow)
 
-A virtualenv already exists at `.venv/`. To use it directly against the
-Dockerized Postgres/Redis (bring up just `db` and `redis`, run Django on the
-host):
+A virtualenv already exists at `.venv/`. `runserver` is overridden (see
+`backend/apps/tenants/management/commands/runserver.py`) to bring up the
+Docker services the backend depends on (`db`, `redis`, `worker`, `beat`) on
+its own before starting, and defaults to port **8010** — so this one command
+is the whole backend workflow, no separate `docker compose up -d db redis`
+step needed:
 
 ```bash
-docker compose up -d db redis
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python backend/manage.py migrate
 .venv/bin/python backend/manage.py runserver
 ```
+
+- Backend API: http://localhost:8010
 
 Run the test suite from the repo root (pytest config lives in
 `pyproject.toml` and points at `backend/`):
@@ -132,9 +136,11 @@ npm install
 npm run dev
 ```
 
-Defaults to proxying `/api` to `http://localhost:8001` (matching the
-Docker-exposed backend port) — see `VITE_API_PROXY_TARGET` in
-`vite.config.ts` if you're running the backend somewhere else.
+Runs on port **5160** and defaults to proxying `/api` to
+`http://localhost:8010` (matching the `manage.py runserver` port above) —
+see `VITE_API_PROXY_TARGET` in `vite.config.ts` if you're running the
+backend somewhere else (e.g. `http://localhost:8001` for the Dockerized
+`web` service instead).
 
 ## Production deployment
 

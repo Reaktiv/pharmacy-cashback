@@ -456,6 +456,14 @@ a:hover {
   justify-content: center;
 }
 
+/* Collapsed rail hides .sidebar-brand entirely, which is what normally
+ * separates the toggle button from the nav icons below (its own bottom
+ * padding) — make that gap up directly on .sidebar-nav so the icons don't
+ * end up flush against the button above them. */
+.sidebar.closed .sidebar-nav {
+  margin-top: 0.9rem;
+}
+
 .sidebar.closed .nav-group-label,
 .sidebar.closed .nav-item-label,
 .sidebar.closed .sidebar-profile-trigger-name,
@@ -472,11 +480,67 @@ a:hover {
 }
 
 /* Close (×) affordance living inside the sidebar itself — the topbar button
-   only opens it now. Right-aligned above the nav group so it reads as "close
-   this panel", not as another nav row. */
+   only opens it now. Right-aligned above the brand block below it. */
 .sidebar-top {
   display: flex;
   justify-content: flex-end;
+}
+
+/* Platform's own name + logo (not any individual tenant's — see
+ * Layout.tsx's comment on the fetch effect) — side by side below the toggle
+ * button, the same brand every account sees regardless of role or tenant.
+ * A left inset keeps the mark off the sidebar's own edge; a long name wraps
+ * onto a second line instead of overflowing or getting truncated. */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.2rem 0.5rem 1.1rem 0.7rem;
+}
+
+.sidebar-brand-mark {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  overflow: hidden;
+}
+
+.sidebar-brand-mark.has-image {
+  background: #fff;
+}
+
+.sidebar-brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sidebar-brand-mark svg {
+  width: 55%;
+  height: 55%;
+}
+
+.sidebar-brand-name {
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  color: #fff;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+/* Collapsed rail stays icon-only for the toggle button too — no room for
+ * the brand block below it at 68px wide, and it's already shown at full
+ * size the moment the sidebar re-expands. */
+.sidebar.closed .sidebar-brand {
+  display: none;
 }
 
 .sidebar-close {
@@ -668,7 +732,7 @@ a:hover {
 .sidebar-profile-avatar {
   width: 26px;
   height: 26px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-full);
   flex-shrink: 0;
   overflow: hidden;
   display: grid;

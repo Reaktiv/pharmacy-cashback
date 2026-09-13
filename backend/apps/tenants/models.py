@@ -98,9 +98,12 @@ class GlobalSettings(models.Model):
     platform_name = models.CharField(
         max_length=100,
         default="Pharmacy Cashback",
-        help_text="Product-wide brand name shown on the login screen and in "
-        "the superadmin's own account (every tenant-scoped account sees its "
-        "own Tenant.name/logo instead — see Tenant.name/Tenant.logo).",
+        help_text="Product-wide brand name shown on the login screen and "
+        "everywhere in the product's own chrome — the React admin sidebar "
+        "(every role) and the seller-web till page — regardless of which "
+        "tenant an account belongs to. Tenant.name/Tenant.logo (set by a "
+        "tenant admin in TenantSettingsPage) only feed the tenant's own "
+        "Telegram bot display name, not this UI.",
     )
     platform_logo = models.FileField(
         upload_to=platform_logo_upload_path, null=True, blank=True

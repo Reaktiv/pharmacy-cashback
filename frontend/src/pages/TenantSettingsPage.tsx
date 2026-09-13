@@ -44,12 +44,11 @@ function useAutoDismiss(flag: boolean, onDone: () => void, ms = 3200) {
 
 const LOGO_MAX_BYTES = 5 * 1024 * 1024
 
-/** Lets the tenant admin rename their own pharmacy and pick its logo — both
- * then show up everywhere the brand appears for every account scoped to
- * this tenant (sidebar/topbar for tenant_admin and branch_manager via
- * Layout.tsx, the seller-web till page, CLAUDE.md-adjacent branding).
- * Renaming also pushes the new name to the tenant's Telegram bot as its
- * display name (apps/bot/tasks.py sync_bot_display_name), server-side. */
+/** Lets the tenant admin rename their own pharmacy and pick its logo — shown
+ * on the seller-web till page and pushed to the tenant's Telegram bot as its
+ * display name (apps/bot/tasks.py sync_bot_display_name), server-side. Not
+ * shown in the React admin sidebar — that always carries the platform's own
+ * brand (Layout.tsx), the same one every tenant's accounts see. */
 function PharmacyIdentitySection({ tenant, onSaved }: { tenant: Tenant; onSaved: (t: Tenant) => void }) {
   const { t } = useLanguage()
   const { refreshBranding } = useOutletContext<LayoutOutletContext>()

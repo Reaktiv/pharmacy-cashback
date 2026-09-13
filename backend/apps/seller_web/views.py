@@ -3,7 +3,7 @@ from functools import wraps
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, Http404, HttpResponseRedirect
+from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 
@@ -24,6 +24,7 @@ from apps.ledger.services import (
 from apps.seller_web.forms import EarnForm, RedeemForm
 from apps.seller_web.i18n import LANGUAGE_COOKIE, LANGUAGES, get_language, strings_for, t
 from apps.tenants.access import tenant_is_blocked
+from apps.tenants.models import GlobalSettings
 
 # Aligned with the session cookie's own lifetime expectations — long enough
 # that picking a language once sticks around, short enough to naturally
@@ -95,11 +96,13 @@ def seller_required(view_func):
 @seller_required
 def register(request):
     language = get_language(request)
+    gs = GlobalSettings.load()
     context = {
         "earn_form": EarnForm(initial={"idempotency_key": uuid.uuid4().hex}, language=language),
         "redeem_form": RedeemForm(initial={"idempotency_key": uuid.uuid4().hex}, language=language),
         "seller": request.seller,
-        "has_tenant_logo": bool(request.seller.tenant.logo),
+        "platform_name": gs.platform_name,
+        "has_platform_logo": bool(gs.platform_logo),
         "s": strings_for(language),
         "language": language,
         "languages": LANGUAGES,
@@ -196,16 +199,3 @@ def redeem(request):
     )
     return redirect("seller_web:register")
 
-
-@seller_required
-def tenant_logo(request):
-    """Streams the seller's own tenant's logo — same self-scoped-only
-    convention as avatar() above and apps.accounts.api_views.
-    MeTenantLogoView (the React-panel equivalent for tenant_admin/
-    branch_manager). Lets the till page show the pharmacy's own branding
-    instead of the generic product logo (CLAUDE.md-adjacent — every screen
-    a tenant's own people see should read as "their" pharmacy)."""
-    tenant = request.seller.tenant
-    if not tenant.logo:
-        raise Http404
-    return FileResponse(tenant.logo.open("rb"), content_type="application/octet-stream")

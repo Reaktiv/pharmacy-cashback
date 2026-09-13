@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { apiFetch, apiFetchObjectUrl } from '../api/client'
-import type { MeProfile } from '../api/types'
+import type { MeProfile, PlatformBranding } from '../api/types'
 import { useLanguage, type StringKey } from '../lib/i18n'
 import ConfirmDialog from './ConfirmDialog'
 import ProfileDrawer from './ProfileDrawer'
@@ -18,6 +18,7 @@ import {
   IconX,
   IconSettings,
   IconUser,
+  IconCapsule,
 } from './Icons'
 import type { ReactNode } from 'react'
 
@@ -79,6 +80,9 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const avatarUrlRef = useRef<string | null>(null)
+  const [brandLogoUrl, setBrandLogoUrl] = useState<string | null>(null)
+  const brandLogoUrlRef = useRef<string | null>(null)
+  const [platformBrandName, setPlatformBrandName] = useState<string | null>(null)
   // Open by default on desktop, closed by default on phone-sized screens —
   // same hamburger-toggled menu either way, just a different starting state.
   const [menuOpen, setMenuOpen] = useState(() => !window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches)
@@ -101,6 +105,12 @@ export default function Layout() {
     if (avatarUrlRef.current) URL.revokeObjectURL(avatarUrlRef.current)
     avatarUrlRef.current = url
     setAvatarUrl(url)
+  }
+
+  const setBrandLogo = (url: string | null) => {
+    if (brandLogoUrlRef.current) URL.revokeObjectURL(brandLogoUrlRef.current)
+    brandLogoUrlRef.current = url
+    setBrandLogoUrl(url)
   }
 
   // Account-level language wins over whatever this browser's localStorage
@@ -132,9 +142,34 @@ export default function Layout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meProfile?.has_avatar])
 
+  // The sidebar brand mark is always OUR platform's own name/logo (edited by
+  // superadmin from ProfileDrawer) — the same one shown pre-login — not any
+  // individual tenant's own pharmacy branding, so every account sees one
+  // consistent brand regardless of which pharmacy it belongs to. Public
+  // endpoint (matches LoginPage's own fetch), so this doesn't depend on
+  // meProfile at all beyond being logged into the layout in the first place.
+  useEffect(() => {
+    let cancelled = false
+    apiFetch<PlatformBranding>('/api/branding/')
+      .then((data) => {
+        if (cancelled) return
+        setPlatformBrandName(data.name)
+        if (!data.has_logo) return
+        return apiFetchObjectUrl('/api/branding/logo/').then((url) => {
+          if (cancelled) URL.revokeObjectURL(url)
+          else setBrandLogo(url)
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   useEffect(() => {
     return () => {
       if (avatarUrlRef.current) URL.revokeObjectURL(avatarUrlRef.current)
+      if (brandLogoUrlRef.current) URL.revokeObjectURL(brandLogoUrlRef.current)
     }
   }, [])
 
@@ -145,6 +180,7 @@ export default function Layout() {
   }
 
   const displayName = meProfile?.full_name || user?.username || ''
+  const brandName = platformBrandName || 'Pharmacy Cashback'
 
   return (
     <div className="app-shell">
@@ -161,6 +197,13 @@ export default function Layout() {
           >
             {menuOpen ? <IconX /> : <IconMenu />}
           </button>
+        </div>
+
+        <div className="sidebar-brand">
+          <span className={`sidebar-brand-mark${brandLogoUrl ? ' has-image' : ''}`} aria-hidden="true">
+            {brandLogoUrl ? <img src={brandLogoUrl} alt="" /> : <IconCapsule />}
+          </span>
+          <span className="sidebar-brand-name">{brandName}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -231,12 +274,18 @@ export default function Layout() {
         onClose={() => setProfileOpen(false)}
         profile={meProfile}
         avatarUrl={avatarUrl}
-        onSaved={(updated, avatarFile, removedAvatar) => {
+        onSaved={(updated, avatarFile, removedAvatar, platformLogoFile, removedPlatformLogo) => {
           // Already have the fresh server response from the PATCH — write
           // it straight into the cache instead of paying for a refetch.
           queryClient.setQueryData(ME_QUERY_KEY, updated)
           if (avatarFile) setAvatar(URL.createObjectURL(avatarFile))
           else if (removedAvatar) setAvatar(null)
+          // Only a superadmin can edit platform branding, and `updated` is
+          // its own fresh MeProfile in that case — so platform_name is safe
+          // to trust here without re-checking the role.
+          if (updated.platform_name) setPlatformBrandName(updated.platform_name)
+          if (platformLogoFile) setBrandLogo(URL.createObjectURL(platformLogoFile))
+          else if (removedPlatformLogo) setBrandLogo(null)
         }}
       />
 

@@ -9,21 +9,23 @@ import react from '@vitejs/plugin-react'
 //
 // The proxy target is configurable via VITE_API_PROXY_TARGET because it
 // differs between running `npm run dev` directly on the host
-// (localhost:8001, matching docker-compose's remapped web port) and running
-// inside docker-compose's own frontend service (http://web:8000, the
-// in-network service name/port — "localhost" inside that container means
-// the container itself, not the host or the web service).
+// (localhost:8010, matching the backend's `manage.py runserver` default
+// port) and running inside docker-compose's own frontend service
+// (http://web:8000, the in-network service name/port — "localhost" inside
+// that container means the container itself, not the host or the web
+// service).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
     plugins: [react()],
     server: {
       host: true, // bind 0.0.0.0 so it's reachable from outside a container
+      port: 5160,
       // Dev tunnels (ngrok/cloudflare) hand out a random subdomain per run,
       // so a fixed allowlist isn't workable — trust any Host header here.
       allowedHosts: true,
       proxy: {
-        '/api': env.VITE_API_PROXY_TARGET || 'http://localhost:8001',
+        '/api': env.VITE_API_PROXY_TARGET || 'http://localhost:8010',
       },
     },
   }

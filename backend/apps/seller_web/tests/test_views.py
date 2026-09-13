@@ -1,18 +1,11 @@
-import base64
 from decimal import Decimal
 
 import pytest
-from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.accounts.models import UserProfile
 from apps.customers.models import OTP
 from apps.ledger.models import Transaction
 from apps.ledger.services import get_balance, post_earn_transaction
-
-TINY_PNG_BYTES = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
-    "+A8AAQUBAScY42YAAAAASUVORK5CYII="
-)
 
 
 @pytest.mark.django_db
@@ -407,30 +400,3 @@ def test_redeem_with_invalid_otp_shows_an_error_and_posts_nothing(
     assert Transaction.objects.all_tenants().filter(tenant=tenant).count() == 0
 
 
-@pytest.mark.django_db
-def test_seller_can_fetch_tenant_logo_once_tenant_admin_uploads_one(
-    client, make_tenant, make_branch, make_seller
-):
-    tenant = make_tenant("t")
-    logo = SimpleUploadedFile("logo.png", TINY_PNG_BYTES, content_type="image/png")
-    tenant.logo = logo
-    tenant.save(update_fields=["logo"])
-    branch = make_branch(tenant)
-    seller = make_seller(tenant, branch)
-    client.login(username=seller.user.username, password="pass1234")
-
-    response = client.get("/seller/tenant-logo/")
-
-    assert response.status_code == 200
-
-
-@pytest.mark.django_db
-def test_seller_tenant_logo_404s_when_tenant_has_no_logo(
-    client, make_tenant, make_branch, make_seller
-):
-    tenant = make_tenant("t")
-    branch = make_branch(tenant)
-    seller = make_seller(tenant, branch)
-    client.login(username=seller.user.username, password="pass1234")
-
-    assert client.get("/seller/tenant-logo/").status_code == 404
